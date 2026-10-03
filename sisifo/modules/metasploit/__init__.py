@@ -1,0 +1,1 @@
+"""Metasploit structured reconnaissance adapter."""

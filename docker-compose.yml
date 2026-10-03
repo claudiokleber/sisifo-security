@@ -1,0 +1,38 @@
+name: sisifo
+services:
+  sisifo:
+    build: .
+    image: sisifo/app:0.2
+    environment:
+      SISIFO_DATA_DIR: /data
+      SISIFO_TOOL_NETWORK: sisifo_default
+      SISIFO_OLLAMA_URL: http://ollama:11434
+    volumes:
+      - ./data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    init: true
+  nmap:
+    profiles: [tools]
+    build: ./sisifo/modules/nmap
+    image: sisifo/nmap:0.2
+    entrypoint: [nmap]
+    command: [--version]
+  nikto:
+    profiles: [tools]
+    image: ghcr.io/sullo/nikto:2.6.1
+    command: [-Version]
+  metasploit:
+    profiles: [tools]
+    build: ./sisifo/modules/metasploit
+    image: sisifo/metasploit:0.2
+  ollama:
+    profiles: [ai]
+    image: ollama/ollama:latest
+    volumes:
+      - ollama:/root/.ollama
+  lab:
+    profiles: [lab]
+    image: nginx:1.28-alpine
+    # No host ports: only the local Docker network can reach this test server.
+volumes:
+  ollama:

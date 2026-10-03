@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["sisifo*"]
+
+[tool.setuptools.package-data]
+"sisifo.modules.nmap" = ["Dockerfile"]
+"sisifo.modules.metasploit" = ["Dockerfile", "runner.rb"]
+
+[project]
+name = "sisifo"
+version = "0.2.0"
+description = "Container-based security evidence and reporting"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["typer>=0.15,<1", "rich>=13,<16", "pydantic>=2.10,<3", "docker>=7.1,<8", "defusedxml>=0.7,<1"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "ruff>=0.9,<1", "build>=1,<2"]
+
+[project.scripts]
+sisifo = "sisifo.cli.main:app"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
