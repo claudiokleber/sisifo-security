@@ -1,15 +1,15 @@
-import json
 import html
+import json
 import re
 
 from .schema import utcnow
-from .session import atomic_write, load_session, verified_findings, session_dir
+from .session import atomic_write, load_session, session_dir, verified_findings
 
 
 def plain(text):
     # Keep untrusted tool text from injecting Markdown/HTML report structure.
-    value = html.escape(" ".join(str(text).split()), quote=True)
-    return re.sub(r"([\\`*_{}\[\]()#+\-.!|~=:])", r"\\\1", value)
+    value = re.sub(r"([\\`*_{}\[\]()#+\-.!|~=:])", r"\\\1", " ".join(str(text).split()))
+    return html.escape(value, quote=False)
 
 
 def build_report(session_id):
@@ -78,6 +78,7 @@ def compare_sessions(before_id, after_id):
         raise ValueError("Compare sessões do mesmo projeto e alvo.")
     if before.status != "completed" or after.status != "completed":
         raise ValueError("Comparação requer duas sessões concluídas sem falhas.")
+
     def coverage(s):
         values = []
         for r in s.runs:
@@ -85,15 +86,24 @@ def compare_sessions(before_id, after_id):
                 raise ValueError("Comparação requer execuções concluídas.")
             if r.image == "imported-xml":
                 if not r.coverage or not r.coverage.get("complete"):
-                    raise ValueError("Cobertura importada desconhecida; reimporte XML com args e scaninfo.")
+                    raise ValueError(
+                        "Cobertura importada desconhecida; reimporte XML com args e scaninfo."
+                    )
                 values.append((r.tool, json.dumps(r.coverage, sort_keys=True)))
             else:
                 if not r.image_id:
                     raise ValueError("Cobertura desconhecida: ID da imagem ausente.")
-                values.append((r.tool, json.dumps([r.command, r.image_id, s.scope])))
+                values.append(
+                    (
+                        r.tool,
+                        json.dumps([r.command, r.image_id, s.scope, r.coverage], sort_keys=True),
+                    )
+                )
         return sorted(values)
+
     if coverage(before) != coverage(after):
         raise ValueError("Cobertura diferente: ferramenta, comando ou imagem mudou.")
+
     def index(s):
         result = {}
         for f in verified_findings(s):
@@ -102,6 +112,7 @@ def compare_sessions(before_id, after_id):
                 raise ValueError("Identidade de evidência ambígua; comparação recusada.")
             result[key] = f.model_dump(mode="json")
         return result
+
     a, b = index(before), index(after)
     shared = sorted(a.keys() & b.keys())
     result = {
@@ -109,7 +120,11 @@ def compare_sessions(before_id, after_id):
         "after": after_id,
         "new": [b[k] for k in sorted(b.keys() - a.keys())],
         "not_observed_again": [a[k] for k in sorted(a.keys() - b.keys())],
-        "changed": [{"before": a[k], "after": b[k]} for k in shared if a[k]["fingerprint"] != b[k]["fingerprint"]],
+        "changed": [
+            {"before": a[k], "after": b[k]}
+            for k in shared
+            if a[k]["fingerprint"] != b[k]["fingerprint"]
+        ],
         "unchanged": sum(a[k]["fingerprint"] == b[k]["fingerprint"] for k in shared),
         "limitation": "Não observado novamente não significa corrigido; valide a cobertura e o serviço.",
     }

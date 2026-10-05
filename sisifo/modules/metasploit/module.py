@@ -1,6 +1,6 @@
 import hashlib
-import json
 import ipaddress
+import json
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -42,11 +42,13 @@ def parse(data: bytes, target: str, evidence: str) -> list[Finding]:
     expected_port = url.port or (443 if url.scheme == "https" else 80)
     if result.target != target:
         raise ValueError("Resultado Metasploit pertence a outro alvo.")
+
     def normalize(host):
         try:
             return str(ipaddress.ip_address(host))
         except ValueError:
             return host.rstrip(".").lower()
+
     allowed = {normalize(h) for h in result.resolved_hosts}
     try:
         requested_ip = str(ipaddress.ip_address(url.hostname))
@@ -65,13 +67,27 @@ def parse(data: bytes, target: str, evidence: str) -> list[Finding]:
         if fingerprint in seen:
             continue
         seen.add(fingerprint)
-        findings.append(Finding(
-            tool="metasploit", target=target, port=service.port, protocol="tcp",
-            service=service.protocol, severity="info", category="observation",
-            finding=f"Metasploit identificou serviço {service.protocol}: {service.info}",
-            evidence=evidence, fingerprint=fingerprint,
-            identity=hashlib.sha256(f"metasploit|{PROFILE}|{target}".encode()).hexdigest(),
-            raw=json.dumps({"module": PROFILE, "framework_version": result.framework_version,
-                            "service": service.model_dump()}, ensure_ascii=False),
-        ))
+        findings.append(
+            Finding(
+                tool="metasploit",
+                target=target,
+                port=service.port,
+                protocol="tcp",
+                service=service.protocol,
+                severity="info",
+                category="observation",
+                finding=f"Metasploit identificou serviço {service.protocol}: {service.info}",
+                evidence=evidence,
+                fingerprint=fingerprint,
+                identity=hashlib.sha256(f"metasploit|{PROFILE}|{target}".encode()).hexdigest(),
+                raw=json.dumps(
+                    {
+                        "module": PROFILE,
+                        "framework_version": result.framework_version,
+                        "service": service.model_dump(),
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        )
     return findings

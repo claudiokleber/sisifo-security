@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 Identifier = Annotated[str, Field(pattern=r"^[a-f0-9]{32}$")]
 
@@ -39,10 +39,14 @@ class RunResult(BaseModel):
     command: list[str] = Field(default_factory=list)
     started_at: datetime = Field(default_factory=utcnow)
     finished_at: datetime | None = None
-    status: Literal["running", "completed", "failed", "timeout", "cancelled", "interrupted"] = "running"
+    status: Literal["running", "completed", "failed", "timeout", "cancelled", "interrupted"] = (
+        "running"
+    )
     container_id: str | None = None
     coverage: dict | None = None
     imported_at: datetime | None = None
+    source_started_at: datetime | None = None
+    source_finished_at: datetime | None = None
     exit_code: int | None = None
     error: str | None = None
     stdout: str = ""
@@ -62,20 +66,28 @@ class Session(BaseModel):
     finished_at: datetime | None = None
     tools_run: list[str] = Field(default_factory=list)
     runs: list[RunResult] = Field(default_factory=list)
-    status: Literal["running", "completed", "partial", "failed", "cancelled", "interrupted"] = "running"
+    status: Literal["running", "completed", "partial", "failed", "cancelled", "interrupted"] = (
+        "running"
+    )
     findings_sha256: str | None = None
 
 
 class Recommendation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     evidence_ids: list[Identifier] = Field(min_length=1)
     assessment: str = Field(min_length=1, max_length=8000)
     measures: list[str] = Field(min_length=1, max_length=20)
     verification: str = Field(min_length=1, max_length=8000)
     confidence: Literal["low", "medium", "high"]
+    claim_type: Literal["observation", "hypothesis"] = "hypothesis"
+    observation: str = Field(default="", max_length=8000)
+    missing_evidence: list[str] = Field(default_factory=list, max_length=20)
+    evidence_quotes: dict[str, str] = Field(default_factory=dict)
 
 
 class AIResponse(BaseModel):
-    summary: str
+    model_config = ConfigDict(extra="forbid")
+    summary: str = Field(min_length=1, max_length=12000, description="Resumo em português brasileiro (pt-BR).")
     reviewed_evidence_ids: list[Identifier]
-    recommendations: list[Recommendation]
-    limitations: list[str]
+    recommendations: list[Recommendation] = Field(max_length=100)
+    limitations: list[str] = Field(max_length=50)

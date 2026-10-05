@@ -1,0 +1,15 @@
+venv
+.venv
+.git
+__pycache__
+*.egg-info
+data
+dist
+build
+.pytest_cache
+.sisifo-config
+.env
+.env.*
+*.key
+.ruff_cache
+tests

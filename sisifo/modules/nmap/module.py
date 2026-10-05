@@ -74,7 +74,9 @@ def parse(data: bytes, target: str, evidence: str) -> list[Finding]:
                     finding=f"Porta {number}/{protocol} aberta; serviço {name} {version}".strip(),
                     evidence=evidence,
                     fingerprint=hashlib.sha256(key.encode()).hexdigest(),
-                    identity=hashlib.sha256(f"nmap|{addr}|{protocol}|{number}".encode()).hexdigest(),
+                    identity=hashlib.sha256(
+                        f"nmap|{addr}|{protocol}|{number}".encode()
+                    ).hexdigest(),
                     details={"product_version": version},
                 )
             )

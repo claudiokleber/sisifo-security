@@ -1,0 +1,18 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+sessions/
+data/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+.env
+
+# Local provider credentials
+.sisifo-config/
+.env.*
+*.key
+*.pem

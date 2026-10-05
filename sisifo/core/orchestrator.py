@@ -4,6 +4,7 @@ import hashlib
 import io
 import os
 import tarfile
+import time
 from contextlib import suppress
 from pathlib import Path
 
@@ -12,11 +13,19 @@ from requests.exceptions import ConnectionError as RequestsConnectionError
 from requests.exceptions import ReadTimeout
 from urllib3.exceptions import ReadTimeoutError
 
+from .execution import BudgetExceeded, Cancelled
 from .logger import log_event
 from .modules import select_modules, target_for
 from .schema import RunResult, utcnow
-from .session import (create_session, finish_session, save_session, session_dir, write_findings,
-                      session_lock, load_session)
+from .session import (
+    create_session,
+    finish_session,
+    load_session,
+    save_session,
+    session_dir,
+    session_lock,
+    write_findings,
+)
 
 MAX_ARTIFACT = 20 * 1024 * 1024
 
@@ -55,13 +64,17 @@ def archive_file(container, path):
 
 def new_run(module, target):
     return RunResult(
-        tool=module.name, image=module.image, command=module.command(target),
+        tool=module.name,
+        image=module.image,
+        command=module.command(target),
         stdout=f"raw_output/{module.name}.stdout.txt",
-        stderr=f"raw_output/{module.name}.stderr.txt", artifact=f"raw_output/{module.artifact}",
+        stderr=f"raw_output/{module.name}.stderr.txt",
+        artifact=f"raw_output/{module.artifact}",
+        coverage={"source": "docker-run", "network": os.getenv("SISIFO_TOOL_NETWORK", "bridge")},
     )
 
 
-def execute(module, target, session_id, timeout=600, *, run=None, persist=None):
+def execute(module, target, session_id, timeout=600, *, run=None, persist=None, control=None):
     d = session_dir(session_id)
     r = run or new_run(module, target)
     client = container = None
@@ -90,7 +103,21 @@ def execute(module, target, session_id, timeout=600, *, run=None, persist=None):
         if persist:
             persist()
         try:
-            r.exit_code = container.wait(timeout=timeout)["StatusCode"]
+            if control is None:
+                r.exit_code = container.wait(timeout=timeout)["StatusCode"]
+            else:
+                deadline = time.monotonic() + timeout
+                while True:
+                    control.check()
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise ReadTimeout("Tool timeout")
+                    try:
+                        r.exit_code = container.wait(timeout=min(1, remaining))["StatusCode"]
+                        break
+                    except (ReadTimeout, RequestsConnectionError) as error:
+                        if not is_timeout(error):
+                            raise
             r.status = "completed" if r.exit_code == 0 else "failed"
             if r.exit_code != 0:
                 r.error = f"Ferramenta encerrou com código {r.exit_code}. Consulte stderr."
@@ -99,7 +126,7 @@ def execute(module, target, session_id, timeout=600, *, run=None, persist=None):
                 raise
             r.status, r.error = "timeout", f"Tempo limite de {timeout}s atingido."
             container.kill()
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, Cancelled, BudgetExceeded):
             r.status, r.error = "cancelled", "Cancelado pelo usuário."
             container.kill()
         stdout = container.logs(stdout=True, stderr=False)
@@ -135,7 +162,7 @@ def execute(module, target, session_id, timeout=600, *, run=None, persist=None):
     return r, findings
 
 
-def scan(target, names="nmap", project="default", timeout=600):
+def scan(target, names="nmap", project="default", timeout=600, *, control=None):
     modules = select_modules(names)
     for m in modules:
         m.command(target_for(m, target))  # Validate all inputs before creating a session.
@@ -145,13 +172,22 @@ def scan(target, names="nmap", project="default", timeout=600):
     all_findings = []
     with session_lock(s.id):
         for m in modules:
+            if control:
+                try:
+                    control.progress(f"Executando {m.name}", {"session_id": s.id})
+                except (Cancelled, BudgetExceeded):
+                    s.status = "cancelled"
+                    s.finished_at = utcnow()
+                    save_session(s)
+                    return s
             run = new_run(m, target_for(m, target))
             s.runs.append(run)
             s.tools_run.append(m.name)
             save_session(s)
             log_event(s.id, "module_started", tool=m.name)
             result, findings = execute(
-                m, target_for(m, target), s.id, timeout, run=run, persist=lambda: save_session(s)
+                m, target_for(m, target), s.id, timeout, run=run, persist=lambda: save_session(s),
+                **({"control": control} if control else {})
             )
             s.runs[-1] = result
             all_findings.extend(findings)
@@ -172,14 +208,18 @@ def recover_session(session_id):
             raise ValueError("Somente sessões running podem ser recuperadas.")
         client = docker.from_env(timeout=10)
         try:
-            containers = client.containers.list(all=True, filters={"label": f"sisifo.session={s.id}"})
+            containers = client.containers.list(
+                all=True, filters={"label": f"sisifo.session={s.id}"}
+            )
             if any(c.status not in {"exited", "dead"} for c in containers):
                 raise ValueError("Há container ativo desta sessão; recuperação recusada.")
             for run in s.runs:
                 if run.status == "running":
                     run.status = "interrupted"
                     run.finished_at = utcnow()
-                    run.error = "Processo interrompido; resultados desta execução não foram concluídos."
+                    run.error = (
+                        "Processo interrompido; resultados desta execução não foram concluídos."
+                    )
             s.status = "interrupted"
             s.finished_at = utcnow()
             save_session(s)

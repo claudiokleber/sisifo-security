@@ -221,8 +221,10 @@ def test_ai_coverage_and_priority(tmp_path):
         )
         for i in range(201)
     ]
-    session.write_findings(s.id, items)
-    data = ai_analyzer.prepare_input(s.id)
+    s.findings_sha256 = session.write_findings(s.id, items)
+    s.runs[0].findings_count = len(items)
+    session.save_session(s)
+    data = ai_analyzer.prepare_input(s.id, max_chars=200000)
     assert data["coverage"]["omitted"] == 1
     assert data["evidence"][0]["severity"] == "critical"
     assert ai_analyzer.analyze_session(s.id)["mode"] == "export"
@@ -232,9 +234,10 @@ def ai_reply(monkeypatch, sid, *, unknown=False):
     evidence = session.read_findings(sid)[0].id
     body = {
         "summary": "Resumo",
+        "reviewed_evidence_ids": [evidence],
         "recommendations": [
             {
-                "evidence_ids": ["fake" if unknown else evidence],
+                "evidence_ids": ["f" * 32 if unknown else evidence],
                 "assessment": "Revisar exposição",
                 "measures": ["Revisar configuração"],
                 "verification": "Repetir avaliação",
@@ -243,16 +246,15 @@ def ai_reply(monkeypatch, sid, *, unknown=False):
         ],
         "limitations": ["Somente observações"],
     }
-    raw = json.dumps(
-        {"done": True, "model": "fixture", "message": {"content": json.dumps(body)}}
-    ).encode()
-    monkeypatch.setattr(ai_analyzer, "urlopen", lambda *a, **kw: io.BytesIO(raw))
+    monkeypatch.setattr(
+        ai_analyzer.providers, "complete", lambda *a, **kw: (json.dumps(body), {"model": "fixture"})
+    )
 
 
 def test_ai_good_response(tmp_path, monkeypatch):
     s = imported(tmp_path)
     ai_reply(monkeypatch, s.id)
-    result = ai_analyzer.analyze_session(s.id, "fixture")
+    result = ai_analyzer.analyze_session(s.id, "fixture", provider="ollama")
     assert Path(result["path"]).is_file()
 
 
@@ -260,7 +262,7 @@ def test_ai_unknown_evidence_keeps_report(tmp_path, monkeypatch):
     s = imported(tmp_path)
     ai_reply(monkeypatch, s.id, unknown=True)
     with pytest.raises(ValueError, match="desconhecida"):
-        ai_analyzer.analyze_session(s.id, "fixture")
+        ai_analyzer.analyze_session(s.id, "fixture", provider="ollama")
     assert (session.session_dir(s.id) / "reports/report.md").is_file()
     metadata = list((session.session_dir(s.id) / "analysis").glob("*/metadata.json"))
     assert json.loads(metadata[0].read_text())["status"] == "failed"
@@ -319,7 +321,7 @@ def test_combined_target_and_partial(monkeypatch):
 
     calls = []
 
-    def execute(module, target, sid, timeout):
+    def execute(module, target, sid, timeout, **kwargs):
         calls.append((module.name, target))
         return RunResult(
             tool=module.name,

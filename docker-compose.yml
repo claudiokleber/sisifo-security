@@ -2,14 +2,34 @@ name: sisifo
 services:
   sisifo:
     build: .
-    image: sisifo/app:0.2
+    image: sisifo/app:0.3.0
     environment:
       SISIFO_DATA_DIR: /data
       SISIFO_TOOL_NETWORK: sisifo_default
       SISIFO_OLLAMA_URL: http://ollama:11434
+      SISIFO_CONFIG_DIR: /config
     volumes:
       - ./data:/data
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./.sisifo-config:/config
+    init: true
+  web:
+    profiles: [web]
+    build: .
+    image: sisifo/app:0.3.0
+    command: ["web", "--port", "8000", "--no-browser"]
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      SISIFO_WEB_BIND: 0.0.0.0
+      SISIFO_DATA_DIR: /data
+      SISIFO_TOOL_NETWORK: sisifo_default
+      SISIFO_OLLAMA_URL: http://ollama:11434
+      SISIFO_CONFIG_DIR: /config
+    volumes:
+      - ./data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./.sisifo-config:/config
     init: true
   nmap:
     profiles: [tools]
@@ -19,20 +39,20 @@ services:
     command: [--version]
   nikto:
     profiles: [tools]
-    image: ghcr.io/sullo/nikto:2.6.1
+    image: ghcr.io/sullo/nikto:2.6.1@sha256:f65dd97be358e8260d97a00e784c05c5f37d2ed69b9a9611b14d3889c2b54efa
     command: [-Version]
   metasploit:
     profiles: [tools]
     build: ./sisifo/modules/metasploit
-    image: sisifo/metasploit:0.2
+    image: sisifo/metasploit:0.2.1
   ollama:
     profiles: [ai]
-    image: ollama/ollama:latest
+    image: ollama/ollama@sha256:292ee7945dfc3d5840a181f3ab86fedb1e66703e02c8af98b50f4da56b7e278c
     volumes:
       - ollama:/root/.ollama
   lab:
     profiles: [lab]
-    image: nginx:1.28-alpine
+    image: nginx:1.28-alpine@sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236
     # No host ports: only the local Docker network can reach this test server.
 volumes:
   ollama:

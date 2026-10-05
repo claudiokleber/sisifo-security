@@ -62,7 +62,9 @@ def parse(data: bytes, target: str, evidence: str) -> list[Finding]:
                     raw=json.dumps(item, ensure_ascii=False),
                     identity=hashlib.sha256(
                         f"nikto|{target}|{item.get('id')}|{item.get('url')}|{item.get('method')}".encode()
-                    ).hexdigest() if item.get("id") else None,
+                    ).hexdigest()
+                    if item.get("id")
+                    else None,
                     details={k: item[k] for k in ("id", "url", "method") if k in item},
                 )
             )

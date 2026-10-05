@@ -36,7 +36,10 @@ def export_vault(session_id: str, vault: Path) -> Path:
         f"Dados completos: `{session_dir(session_id)}`",
         "",
         "## Execuções",
-        *[f"- {plain(r['tool'])}: {r['status']}; {r['findings_count']} observações." for r in s["runs"]],
+        *[
+            f"- {plain(r['tool'])}: {r['status']}; {r['findings_count']} observações."
+            for r in s["runs"]
+        ],
         "",
         "## Evidências",
         *[

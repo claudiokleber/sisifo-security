@@ -3,8 +3,8 @@ from pathlib import Path
 
 from sisifo.modules.nmap.module import parse
 
-from .schema import RunResult, utcnow
 from .coverage import nmap_metadata
+from .schema import RunResult, utcnow
 from .session import create_session, finish_session, session_dir, write_findings
 
 
@@ -28,6 +28,8 @@ def import_nmap(path: Path, target: str, project="default"):
             command=["import-nmap"],
             coverage=coverage,
             imported_at=utcnow(),
+            source_started_at=observed_start,
+            source_finished_at=observed_end,
             status="completed",
             exit_code=0,
             finished_at=utcnow(),

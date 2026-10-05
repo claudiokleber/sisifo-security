@@ -1,6 +1,7 @@
 <?xml version="1.0"?>
-<nmaprun scanner="nmap" version="7.98">
+<nmaprun scanner="nmap" version="7.98" args="nmap -sT -p 80,443,8080 192.0.2.10" start="1700000000">
+<scaninfo type="connect" protocol="tcp" numservices="3" services="80,443,8080"/>
 <host><status state="up"/><address addr="192.0.2.10" addrtype="ipv4"/>
 <ports><port protocol="tcp" portid="80"><state state="open"/><service name="http" product="Example" version="1.0"/></port>
 <port protocol="tcp" portid="443"><state state="closed"/></port></ports></host>
-<runstats><finished exit="success"/></runstats></nmaprun>
+<runstats><finished exit="success" time="1700000010"/></runstats></nmaprun>

@@ -24,6 +24,16 @@ def nmap_metadata(data):
     complete = complete and all(
         all(s.get(k) for k in ("type", "protocol", "numservices", "services")) for s in scans
     )
+    external_options = (
+        "-iL",
+        "--resume",
+        "--excludefile",
+        "--datadir",
+        "--servicedb",
+        "--versiondb",
+    )
+    if any(arg.startswith(external_options) for arg in command):
+        complete = False
     # Exact argv is intentionally conservative: unknown/custom profiles never compare silently.
     coverage = {
         "source": "declared-import",
@@ -33,6 +43,8 @@ def nmap_metadata(data):
         "scaninfo": sorted(scans, key=lambda s: str(sorted(s.items()))),
     }
     finished = root.find("runstats/finished")
-    return coverage, xml_time(root.get("start")), xml_time(
-        finished.get("time") if finished is not None else None
+    return (
+        coverage,
+        xml_time(root.get("start")),
+        xml_time(finished.get("time") if finished is not None else None),
     )

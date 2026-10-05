@@ -23,8 +23,12 @@ class Module:
 def registry() -> dict[str, Module]:
     return {
         "metasploit": Module(
-            "metasploit", os.getenv("SISIFO_METASPLOIT_IMAGE", "sisifo/metasploit:0.2"),
-            metasploit.command, metasploit.parse, "metasploit.json", "/tmp/metasploit.json",
+            "metasploit",
+            os.getenv("SISIFO_METASPLOIT_IMAGE", "sisifo/metasploit:0.2.1"),
+            metasploit.command,
+            metasploit.parse,
+            "metasploit.json",
+            "/tmp/metasploit.json",
             memory_limit="1536m",
             experimental=True,
         ),
@@ -37,7 +41,10 @@ def registry() -> dict[str, Module]:
         ),
         "nikto": Module(
             "nikto",
-            os.getenv("SISIFO_NIKTO_IMAGE", "ghcr.io/sullo/nikto:2.6.1"),
+            os.getenv(
+                "SISIFO_NIKTO_IMAGE",
+                "ghcr.io/sullo/nikto:2.6.1@sha256:f65dd97be358e8260d97a00e784c05c5f37d2ed69b9a9611b14d3889c2b54efa",
+            ),
             nikto.command,
             nikto.parse,
             "nikto.json",

@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sísifo - Login</title>
+    {% include "brand-head.html" %}
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-box">
+            <h1 class="login-brand">{% include "brand-logo.html" %}</h1>
+            <p class="subtitle">Interface web local para gestão de sessões e análises de segurança</p>
+            <form id="login-form" method="post" action="/login">
+                <div class="form-group">
+                    <label for="password">Senha de acesso</label>
+                    <input type="password" id="password" name="password" required autocomplete="current-password">
+                </div>
+                <button type="submit" class="btn btn-primary">Entrar</button>
+            </form>
+            <p class="hint">Configure a senha com <code>sisifo setup-web</code> no terminal.</p>
+        </div>
+    </div>
+    <script src="/static/login.js"></script>
+</body>
+</html>

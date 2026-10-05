@@ -1,17 +1,23 @@
-import json
 import hashlib
+import json
 import os
 import re
-from pathlib import Path
-from uuid import uuid4
 from collections import Counter
 from contextlib import contextmanager
+from pathlib import Path
+from uuid import uuid4
 
 from .schema import Finding, Session, utcnow
 
 
 def data_root() -> Path:
-    return Path(os.getenv("SISIFO_DATA_DIR", str(Path.home() / ".sisifo"))).resolve()
+    override = os.getenv("SISIFO_DATA_DIR")
+    if override:
+        return Path(override).resolve()
+    project = Path(__file__).resolve().parents[2]
+    if (project / "pyproject.toml").exists() and (project / "data").is_dir():
+        return project / "data"
+    return (Path.home() / ".sisifo").resolve()
 
 
 def session_dir(session_id: str, *, must_exist=True) -> Path:
@@ -80,7 +86,9 @@ def write_findings(session_id: str, findings: list[Finding]):
         content,
     )
     # Hash bytes on disk, including the platform's newline representation.
-    return hashlib.sha256((session_dir(session_id) / "logs/findings.jsonl").read_bytes()).hexdigest()
+    return hashlib.sha256(
+        (session_dir(session_id) / "logs/findings.jsonl").read_bytes()
+    ).hexdigest()
 
 
 def read_findings(session_id: str) -> list[Finding]:
@@ -101,6 +109,8 @@ def read_findings(session_id: str) -> list[Finding]:
 def verified_findings(s: Session) -> list[Finding]:
     if s.status == "running":
         raise ValueError("Sessão em execução; aguarde ou use session recover após interrupção.")
+    if s.status == "completed" and (not s.runs or any(r.status != "completed" for r in s.runs)):
+        raise ValueError("Integridade: estado da sessão diverge das execuções.")
     findings = read_findings(s.id)
     directory = session_dir(s.id)
     digest = hashlib.sha256((directory / "logs/findings.jsonl").read_bytes()).hexdigest()
@@ -137,9 +147,11 @@ def session_lock(session_id):
         try:
             if os.name == "nt":
                 import msvcrt
+
                 msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
             else:
                 import fcntl
+
                 fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
             raise ValueError("Sessão possui um escritor ativo; recuperação recusada.") from None

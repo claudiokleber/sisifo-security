@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sísifo - Interface Web</title>
+    {% include "brand-head.html" %}
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <div class="header-content">
+            <h1 class="header-brand"><picture><source srcset="/static/branding/sisifo-mark.svg" media="(prefers-color-scheme: dark)"><img src="/static/branding/sisifo-icon-light.svg" alt="" width="44" height="44"></picture><span>sisifo<span class="brand-cursor" aria-hidden="true">▌</span></span></h1>
+            <nav class="tabs" id="main-tabs">
+                <button class="tab-btn active" data-tab="overview">Visão Geral</button>
+                <button class="tab-btn" data-tab="sessions">Sessões</button>
+                <button class="tab-btn" data-tab="reports">Relatórios</button>
+                <button class="tab-btn" data-tab="scan">Nova Execução</button>
+                <button class="tab-btn" data-tab="analyze">Análise IA</button>
+                <button class="tab-btn" data-tab="osint">OSINT</button>
+                <button class="tab-btn" data-tab="config">Configurações</button>
+            </nav>
+            <div class="header-actions">
+                <span id="csrf-token" data-token="{{ csrf_token }}"></span>
+                <button id="logout-btn" class="btn btn-secondary">Sair</button>
+            </div>
+        </div>
+    </header>
+    <main>
+        <section id="tab-overview" class="tab-panel active">
+            <div class="brand-welcome">{% include "brand-logo.html" %}</div>
+            <h2>Visão Geral</h2>
+            <div class="grid grid-3">
+                <div class="card">
+                    <h3>Sessões Recentes</h3>
+                    <div id="overview-sessions" class="list"><p class="brand-loading" role="status">Carregando sessões…</p></div>
+                </div>
+                <div class="card">
+                    <h3>Ferramentas</h3>
+                    <div id="overview-tools" class="list"></div>
+                </div>
+                <div class="card">
+                    <h3>Integrações</h3>
+                    <div id="overview-integrations" class="list"></div>
+                </div>
+            </div>
+        </section>
+
+        <section id="tab-sessions" class="tab-panel">
+            <div class="panel-header">
+                <h2>Sessões</h2>
+                <div class="filters">
+                    <input type="text" id="session-filter" placeholder="Filtrar por ID, projeto, alvo...">
+                    <select id="session-status-filter">
+                        <option value="">Todos os status</option>
+                        <option value="running">Em execução</option>
+                        <option value="completed">Concluída</option>
+                        <option value="failed">Falhou</option>
+                        <option value="cancelled">Cancelada</option>
+                    </select>
+                </div>
+            </div>
+            <div class="table-container">
+                <table id="sessions-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Projeto</th>
+                            <th>Alvo</th>
+                            <th>Status</th>
+                            <th>Ferramentas</th>
+                            <th>Criada em</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div id="session-detail" class="detail-panel hidden"></div>
+        </section>
+
+        <section id="tab-reports" class="tab-panel">
+            <h2>Relatórios</h2>
+            <div class="panel-header">
+                <input type="text" id="report-session-input" placeholder="ID da sessão">
+                <button id="load-report-btn" class="btn btn-primary">Carregar</button>
+            </div>
+            <div id="report-content" class="hidden">
+                <div class="report-actions">
+                    <button id="download-md-btn" class="btn btn-secondary">Baixar Markdown</button>
+                    <button id="download-json-btn" class="btn btn-secondary">Baixar JSON</button>
+                    <button id="verify-report-btn" class="btn btn-secondary">Verificar Integridade</button>
+                </div>
+                <div id="report-viewer"></div>
+            </div>
+            <div id="compare-section" class="card">
+                <h3>Comparar Sessões</h3>
+                <div class="form-row">
+                    <input type="text" id="compare-before" placeholder="Sessão anterior (ID)">
+                    <input type="text" id="compare-after" placeholder="Sessão posterior (ID)">
+                    <button id="compare-btn" class="btn btn-primary">Comparar</button>
+                </div>
+                <div id="compare-result" class="hidden"></div>
+            </div>
+        </section>
+
+        <section id="tab-scan" class="tab-panel">
+            <h2>Nova Execução</h2>
+            <form id="scan-form" class="card">
+                <div class="form-group">
+                    <label for="scan-target">Alvo *</label>
+                    <input type="text" id="scan-target" name="target" required placeholder="ex.: 192.168.1.0/24 ou http://example.com">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="scan-modules">Módulos</label>
+                        <select id="scan-modules" name="modules" multiple>
+                            <option value="nmap">Nmap</option>
+                            <option value="nikto">Nikto</option>
+                            <option value="metasploit">Metasploit (experimental)</option>
+                        </select>
+                        <small>Use Ctrl+clique para selecionar múltiplos</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="scan-project">Projeto</label>
+                        <input type="text" id="scan-project" name="project" value="default">
+                    </div>
+                    <div class="form-group">
+                        <label for="scan-timeout">Timeout (seg)</label>
+                        <input type="number" id="scan-timeout" name="timeout" value="600" min="60" max="7200">
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary">Iniciar Execução</button>
+            </form>
+            <div id="scan-jobs" class="jobs-list"></div>
+            <form id="import-form" class="card">
+                <h3>Importar evidências Nmap</h3>
+                <div class="form-group">
+                    <label for="import-file">Arquivo XML (até 20 MB)</label>
+                    <input id="import-file" type="file" name="file" accept=".xml" required>
+                </div>
+                <div class="form-group">
+                    <label for="import-target">Alvo descrito no XML</label>
+                    <input id="import-target" name="target" required>
+                </div>
+                <div class="form-group">
+                    <label for="import-project">Projeto</label>
+                    <input id="import-project" name="project" value="default" required>
+                </div>
+                <button type="submit" class="btn btn-secondary">Importar XML local</button>
+            </form>
+        </section>
+
+        <section id="tab-analyze" class="tab-panel">
+            <h2>Análise por IA</h2>
+            <form id="analyze-form" class="card">
+                <div class="form-group">
+                    <label for="analyze-session">Sessão *</label>
+                    <input type="text" id="analyze-session" name="session_id" required placeholder="ID da sessão">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="analyze-provider">Provedor</label>
+                        <select id="analyze-provider" name="provider">
+                            <option value="">Padrão (configurado)</option>
+                            <option value="nvidia">NVIDIA</option>
+                            <option value="ollama">Ollama</option>
+                            <option value="export">Exportar (offline)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="analyze-model">Modelo</label>
+                        <input type="text" id="analyze-model" name="model" placeholder="Opcional">
+                    </div>
+                    <div class="form-group">
+                        <label for="analyze-max-batches">Máx. lotes</label>
+                        <input type="number" id="analyze-max-batches" name="max_batches" value="50" min="1" max="100">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="analyze-resume">Retomar análise (ID opcional)</label>
+                    <input type="text" id="analyze-resume" name="resume_id" pattern="[a-f0-9]{32}" placeholder="ID de uma análise parcial ou cancelada">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="analyze-seconds">Tempo máximo (segundos)</label>
+                        <input type="number" id="analyze-seconds" name="max_seconds" value="1800" min="1" max="7200" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="analyze-budget">Orçamento conservador (unidades, não custo exato)</label>
+                        <input type="number" id="analyze-budget" name="token_budget" value="250000" min="1024" max="1000000" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="analyze-endpoint">Endpoint (opcional)</label>
+                    <input type="text" id="analyze-endpoint" name="endpoint" placeholder="ex.: http://ollama:11434">
+                </div>
+                <div class="info-box">
+                    <strong>Dados enviados:</strong> Evidências da sessão (resumo, achados, metadados).
+                    <br><strong>Destino:</strong> API do provedor selecionado (NVIDIA/Ollama local).
+                    <br><strong>Revisão:</strong> O vault e arquivos de configuração não são incluídos. O mascaramento de evidências é heurístico: revise a exportação offline antes de enviar dados sensíveis.
+                </div>
+                <button type="button" id="preview-analysis" class="btn btn-secondary">Revisar dados (offline)</button>
+                <button type="submit" class="btn btn-primary">Iniciar Análise</button>
+                <pre id="analysis-preview" class="hidden"></pre>
+            </form>
+            <div id="analyze-jobs" class="jobs-list"></div>
+        </section>
+
+        <section id="tab-osint" class="tab-panel">
+            <h2>Integrações OSINT</h2>
+            <div class="grid grid-2">
+                <div class="card">
+                    <h3>Conectores Disponíveis</h3>
+                    <div id="osint-connectors" class="list"></div>
+                </div>
+                <div class="card">
+                    <h3>Consulta</h3>
+                    <form id="osint-query-form">
+                        <div class="form-group">
+                            <label for="osint-connector">Conector</label>
+                            <select id="osint-connector" name="connector_id" required></select>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="osint-query-type">Tipo</label>
+                                <select id="osint-query-type" name="query_type" required>
+                                    <option value="domain">Domínio</option>
+                                    <option value="ip">IP</option>
+                                    <option value="url">URL</option>
+                                    <option value="hash">Hash</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="osint-query">Consulta *</label>
+                            <input type="text" id="osint-query" name="query" required placeholder="ex.: example.com">
+                        </div>
+                        <button type="submit" class="btn btn-primary">Consultar</button>
+                    </form>
+                </div>
+            </div>
+            <div id="osint-jobs" class="jobs-list"></div>
+        </section>
+
+        <section id="tab-config" class="tab-panel">
+            <h2>Configurações</h2>
+            <div class="grid grid-2">
+                <div class="card">
+                    <h3>IA / NVIDIA</h3>
+                    <form id="config-ai-form">
+                        <div class="form-group">
+                            <label for="config-provider">Provedor</label>
+                            <select id="config-provider" name="provider">
+                                <option value="nvidia">NVIDIA</option>
+                                <option value="ollama">Ollama</option>
+                                <option value="export">Exportar (offline)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="config-model">Modelo</label>
+                            <input type="text" id="config-model" name="model" placeholder="ex.: nvidia/nemotron-3-super-120b-a12b">
+                        </div>
+                        <div class="form-group">
+                            <label for="config-nvidia-key">Chave NVIDIA (nvapi-...)</label>
+                            <input type="password" id="config-nvidia-key" name="nvidia_key" autocomplete="new-password">
+                        </div>
+                        <button type="submit" class="btn btn-primary">Salvar</button>
+                    </form>
+                </div>
+                <div class="card">
+                    <h3>Senha da Interface Web</h3>
+                    <form id="config-web-form">
+                        <div class="form-group">
+                            <label for="config-web-password">Nova senha</label>
+                            <input type="password" id="config-web-password" name="web_password" autocomplete="new-password">
+                        </div>
+                        <div class="form-group">
+                            <label for="config-web-password-confirm">Confirmar senha</label>
+                            <input type="password" id="config-web-password-confirm" name="web_password_confirm" autocomplete="new-password">
+                        </div>
+                        <button type="submit" class="btn btn-primary">Atualizar</button>
+                    </form>
+                </div>
+            </div>
+            <div class="card">
+                <h3>Credenciais OSINT</h3>
+                <div id="osint-credentials" class="list"></div>
+            </div>
+        </section>
+    </main>
+    <footer>
+        <p>Sísifo v0.3.0 - Execução local apenas.</p>
+    </footer>
+    <div id="toast-container"></div>
+    <script src="/static/app.js"></script>
+</body>
+</html>
