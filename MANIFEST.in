@@ -1,5 +1,5 @@
 include README.pt-BR.md LICENSE Dockerfile docker-compose.yml requirements-docker.lock install.ps1 install.sh
-recursive-include tests *.py *.xml
+recursive-include tests *.py *.xml *.pcap *.pcapng
 recursive-include docs *.md
 recursive-include docs/brand *.svg *.png *.ico
 prune .sisifo-config

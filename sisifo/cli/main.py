@@ -10,6 +10,7 @@ from sisifo.cli.commands import (
     analyze,
     compare,
     import_nmap,
+    network,
     osint,
     report,
     scan,
@@ -54,6 +55,7 @@ app.add_typer(setup_web.app, name="setup-web")
 app.add_typer(osint.app, name="osint")
 app.add_typer(web.app, name="web")
 app.add_typer(vault.app, name="export-vault")
+app.add_typer(network.app, name="network")
 
 
 # ----- Top-level commands for backward compatibility -----

@@ -38,6 +38,13 @@ from sisifo.core.config import (
 from sisifo.core.jobs import JobManager
 from sisifo.core.modules import registry
 from sisifo.core.report import build_report, compare_sessions
+from sisifo.modules.network import NetworkService
+from sisifo.modules.network.models import (
+    CaptureConfig,
+    CaptureFilter,
+    CaptureLimits,
+    DisplayFilter,
+)
 from sisifo.osint import get_connector, list_connectors
 from sisifo.osint.contract import QueryType
 from sisifo.osint.executor import run_query
@@ -403,6 +410,437 @@ async def api_save_ai(body: AIConfigRequest, _: str = Depends(require_session), 
 
 class PasswordRequest(BaseModel):
     password: str = Field(min_length=8, max_length=1024)
+
+
+class NetworkImportRequest(BaseModel):
+    display_filter: Optional[str] = Field(default=None, max_length=500)
+
+
+class NetworkPacketsRequest(BaseModel):
+    display_filter: Optional[str] = Field(default=None, max_length=500)
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=100, ge=1, le=1000)
+
+
+class NetworkStatsRequest(BaseModel):
+    display_filter: Optional[str] = Field(default=None, max_length=500)
+
+
+class NetworkReportRequest(BaseModel):
+    display_filter: Optional[str] = Field(default=None, max_length=500)
+
+
+class NetworkCaptureRequest(BaseModel):
+    interface_id: str = Field(..., min_length=1)
+    capture_filter: str = Field(default="", max_length=500)
+    max_duration_seconds: int = Field(default=60, ge=1, le=86400)
+    max_file_size_mib: int = Field(default=100, ge=1, le=10240)
+    max_packets: int = Field(default=100000, ge=1, le=10000000)
+    ring_buffer: bool = Field(default=False)
+    ring_buffer_files: int = Field(default=5, ge=2, le=50)
+    output_directory: Optional[str] = Field(default=None, max_length=200)
+
+
+@app.get("/api/network/diagnostics")
+async def api_network_diagnostics(_: str = Depends(require_session)):
+    service = NetworkService()
+    diag = service.discover_tools()
+    return {
+        "platform": diag.platform,
+        "is_docker": diag.is_docker,
+        "dumpcap_path": diag.dumpcap_path,
+        "tshark_path": diag.tshark_path,
+        "wireshark_path": diag.wireshark_path,
+        "npcap_version": diag.npcap_version,
+        "libpcap_version": diag.libpcap_version,
+        "dumpcap_version": diag.dumpcap_version,
+        "tshark_version": diag.tshark_version,
+        "interfaces": [
+            {
+                "id": i.id,
+                "name": i.name,
+                "description": i.description,
+                "loopback": i.loopback,
+                "up": i.up,
+                "addresses": i.addresses,
+            }
+            for i in diag.interfaces
+        ],
+        "capture_permissions": diag.capture_permissions,
+        "permission_details": diag.permission_details,
+        "storage_path": diag.storage_path,
+        "storage_available_mib": diag.storage_available_mib,
+        "max_concurrent_captures": diag.max_concurrent_captures,
+        "active_captures": diag.active_captures,
+        "recent_captures": [
+            {
+                "id": c.id,
+                "source": c.source.value,
+                "status": c.status.value,
+                "interface_id": c.interface_id,
+                "interface_name": c.interface_name,
+                "file_path": c.file_path,
+                "file_size": c.file_size,
+                "packet_count": c.packet_count,
+                "created_at": c.created_at.isoformat() if c.created_at else None,
+            }
+            for c in diag.recent_captures
+        ],
+    }
+
+
+@app.get("/api/network/captures")
+async def api_network_list_captures(limit: int = Query(50, ge=1, le=200), _: str = Depends(require_session)):
+    service = NetworkService()
+    captures = service.list_captures(limit=limit)
+    return {
+        "captures": [
+            {
+                "id": c.id,
+                "source": c.source.value,
+                "status": c.status.value,
+                "interface_id": c.interface_id,
+                "interface_name": c.interface_name,
+                "file_path": c.file_path,
+                "file_size": c.file_size,
+                "packet_count": c.packet_count,
+                "created_at": c.created_at.isoformat() if c.created_at else None,
+            }
+            for c in captures
+        ]
+    }
+
+
+@app.post("/api/network/import")
+async def api_network_import(
+    file: UploadFile = File(...),
+    display_filter: Optional[str] = Form(None),
+    _: str = Depends(require_session),
+    __: None = Depends(verify_csrf),
+):
+    service = NetworkService()
+    if not file.filename or not (file.filename.endswith(".pcap") or file.filename.endswith(".pcapng")):
+        raise HTTPException(status_code=400, detail="Arquivo deve ser .pcap ou .pcapng")
+
+    import tempfile
+    with tempfile.TemporaryDirectory(prefix="sisifo-upload-") as temp:
+        temp_path = Path(temp) / file.filename
+        size = 0
+        with temp_path.open("wb") as output:
+            while chunk := await file.read(65536):
+                size += len(chunk)
+                if size > 500 * 1024 * 1024:
+                    raise HTTPException(status_code=413, detail="Arquivo excede 500 MiB")
+                output.write(chunk)
+
+        try:
+            result = await run_in_threadpool(service.import_pcap, temp_path)
+            return {
+                "id": result.id,
+                "source": result.source.value,
+                "status": result.status.value,
+                "file_path": result.file_path,
+                "file_size": result.file_size,
+                "file_sha256": result.file_sha256,
+                "packet_count": result.packet_count,
+                "dropped_packets": result.dropped_packets,
+                "dropped_by_interface": result.dropped_by_interface,
+                "tshark_version": result.tshark_version,
+                "dumpcap_version": result.dumpcap_version,
+            }
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from None
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Erro inesperado: {e}") from None
+    await file.close()
+
+
+@app.get("/api/network/captures/{capture_id}")
+async def api_network_get_capture(capture_id: str, _: str = Depends(require_session)):
+    service = NetworkService()
+    try:
+        result = service.get_capture(capture_id)
+        return {
+            "id": result.id,
+            "source": result.source.value,
+            "status": result.status.value,
+            "interface_id": result.interface_id,
+            "interface_name": result.interface_name,
+            "capture_filter": result.capture_filter,
+            "display_filter": result.display_filter,
+            "file_path": result.file_path,
+            "file_size": result.file_size,
+            "file_sha256": result.file_sha256,
+            "packet_count": result.packet_count,
+            "dropped_packets": result.dropped_packets,
+            "dropped_by_interface": result.dropped_by_interface,
+            "tshark_version": result.tshark_version,
+            "dumpcap_version": result.dumpcap_version,
+            "environment": result.environment,
+            "is_docker": result.is_docker,
+            "created_at": result.created_at.isoformat() if result.created_at else None,
+            "started_at": result.started_at.isoformat() if result.started_at else None,
+            "finished_at": result.finished_at.isoformat() if result.finished_at else None,
+            "error": result.error,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
+
+
+@app.post("/api/network/captures/{capture_id}/packets")
+async def api_network_packets(
+    capture_id: str,
+    body: NetworkPacketsRequest,
+    _: str = Depends(require_session),
+    __: None = Depends(verify_csrf),
+):
+    service = NetworkService()
+    try:
+        df = DisplayFilter(expression=body.display_filter) if body.display_filter else None
+        packets = await run_in_threadpool(
+            service.list_packets, capture_id, display_filter=df, offset=body.offset, limit=body.limit
+        )
+        return {
+            "packets": [
+                {
+                    "number": p.number,
+                    "time": p.time,
+                    "time_iso": p.time_iso,
+                    "source": p.source,
+                    "destination": p.destination,
+                    "protocol": p.protocol,
+                    "length": p.length,
+                    "info": p.info,
+                }
+                for p in packets
+            ]
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+
+
+@app.get("/api/network/captures/{capture_id}/packets/{packet_number}")
+async def api_network_packet_detail(capture_id: str, packet_number: int, _: str = Depends(require_session)):
+    service = NetworkService()
+    try:
+        detail = await run_in_threadpool(service.get_packet_detail, capture_id, packet_number)
+        return {
+            "number": detail.number,
+            "time": detail.time,
+            "time_iso": detail.time_iso,
+            "source": detail.source,
+            "destination": detail.destination,
+            "protocol": detail.protocol,
+            "length": detail.length,
+            "info": detail.info,
+            "layers": detail.layers,
+            "hex_dump": detail.hex_dump,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+
+
+@app.post("/api/network/captures/{capture_id}/stats")
+async def api_network_stats(
+    capture_id: str,
+    body: NetworkStatsRequest,
+    _: str = Depends(require_session),
+    __: None = Depends(verify_csrf),
+):
+    service = NetworkService()
+    try:
+        df = DisplayFilter(expression=body.display_filter) if body.display_filter else None
+
+        proto_stats = await run_in_threadpool(service.get_protocol_stats, capture_id, df)
+        endpoints = await run_in_threadpool(service.get_endpoints, capture_id, df)
+        conversations = await run_in_threadpool(service.get_conversations, capture_id, df)
+        dns = await run_in_threadpool(service.get_dns_summary, capture_id, df)
+        tcp = await run_in_threadpool(service.get_tcp_summary, capture_id, df)
+
+        return {
+            "protocol_stats": {
+                "total_packets": proto_stats.total_packets,
+                "total_bytes": proto_stats.total_bytes,
+                "by_protocol": [
+                    {
+                        "protocol": item.protocol,
+                        "packets": item.packets,
+                        "bytes": item.bytes,
+                        "percentage_packets": item.percentage_packets,
+                        "percentage_bytes": item.percentage_bytes,
+                    }
+                    for item in proto_stats.by_protocol
+                ],
+            },
+            "endpoints": [
+                {
+                    "address": ep.address,
+                    "type": ep.type,
+                    "packets_rx": ep.packets_rx,
+                    "packets_tx": ep.packets_tx,
+                    "bytes_rx": ep.bytes_rx,
+                    "bytes_tx": ep.bytes_tx,
+                }
+                for ep in endpoints[:50]
+            ],
+            "conversations": [
+                {
+                    "endpoint_a": conv.endpoint_a,
+                    "endpoint_b": conv.endpoint_b,
+                    "protocol": conv.protocol,
+                    "packets": conv.packets,
+                    "bytes": conv.bytes,
+                    "packets_a_to_b": conv.packets_a_to_b,
+                    "bytes_a_to_b": conv.bytes_a_to_b,
+                    "packets_b_to_a": conv.packets_b_to_a,
+                    "bytes_b_to_a": conv.bytes_b_to_a,
+                    "start_time": conv.start_time,
+                    "end_time": conv.end_time,
+                    "duration": conv.duration,
+                }
+                for conv in conversations[:50]
+            ],
+            "dns": dns,
+            "tcp": tcp,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+
+
+@app.post("/api/network/captures/{capture_id}/report")
+async def api_network_report(
+    capture_id: str,
+    body: NetworkReportRequest,
+    _: str = Depends(require_session),
+    __: None = Depends(verify_csrf),
+):
+    service = NetworkService()
+    try:
+        df = DisplayFilter(expression=body.display_filter) if body.display_filter else None
+        report = await run_in_threadpool(service.generate_report, capture_id, df)
+        return {
+            "capture_id": report.capture_id,
+            "summary": {
+                "id": report.summary.id,
+                "source": report.summary.source.value,
+                "status": report.summary.status.value,
+                "packet_count": report.summary.packet_count,
+                "file_size": report.summary.file_size,
+            },
+            "protocol_stats": {
+                "total_packets": report.protocol_stats.total_packets,
+                "total_bytes": report.protocol_stats.total_bytes,
+                "by_protocol": [
+                    {
+                        "protocol": item.protocol,
+                        "packets": item.packets,
+                        "bytes": item.bytes,
+                        "percentage_packets": item.percentage_packets,
+                        "percentage_bytes": item.percentage_bytes,
+                    }
+                    for item in report.protocol_stats.by_protocol
+                ],
+            },
+            "endpoints": [
+                {
+                    "address": ep.address,
+                    "type": ep.type,
+                    "packets_rx": ep.packets_rx,
+                    "packets_tx": ep.packets_tx,
+                    "bytes_rx": ep.bytes_rx,
+                    "bytes_tx": ep.bytes_tx,
+                }
+                for ep in report.endpoints
+            ],
+            "conversations": [
+                {
+                    "endpoint_a": conv.endpoint_a,
+                    "endpoint_b": conv.endpoint_b,
+                    "protocol": conv.protocol,
+                    "packets": conv.packets,
+                    "bytes": conv.bytes,
+                    "duration": conv.duration,
+                }
+                for conv in report.conversations
+            ],
+            "anomalies": report.anomalies,
+            "limitations": report.limitations,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+
+
+@app.post("/api/network/captures/{capture_id}/open-wireshark")
+async def api_network_open_wireshark(capture_id: str, _: str = Depends(require_session), __: None = Depends(verify_csrf)):
+    service = NetworkService()
+    try:
+        service.open_in_wireshark(capture_id)
+        return {"success": True, "message": "Wireshark iniciado"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+
+
+def _run_network_capture(payload: dict, control):
+    service = NetworkService()
+    config = CaptureConfig(
+        interface_id=payload["interface_id"],
+        capture_filter=CaptureFilter(expression=payload.get("capture_filter", "")),
+        limits=CaptureLimits(
+            max_duration_seconds=payload["max_duration_seconds"],
+            max_file_size_mib=payload["max_file_size_mib"],
+            max_packets=payload["max_packets"],
+        ),
+        ring_buffer=payload.get("ring_buffer", False),
+        ring_buffer_files=payload.get("ring_buffer_files", 5),
+        output_directory=payload.get("output_directory"),
+    )
+    result = service.start_capture(config, control=control)
+    return {
+        "id": result.id,
+        "status": result.status.value,
+        "file_path": result.file_path,
+        "file_size": result.file_size,
+        "file_sha256": result.file_sha256,
+        "packet_count": result.packet_count,
+        "dropped_packets": result.dropped_packets,
+        "error": result.error,
+    }
+
+
+@app.post("/api/network/capture")
+async def api_network_capture(
+    body: NetworkCaptureRequest,
+    request: Request,
+    _: str = Depends(require_session),
+    __: None = Depends(verify_csrf),
+):
+    service = NetworkService()
+    diag = service.discover_tools()
+    if diag.is_docker:
+        raise HTTPException(status_code=400, detail="Captura nativa não disponível no Docker")
+    if not diag.capture_permissions:
+        raise HTTPException(status_code=403, detail=f"Sem permissão: {diag.permission_details}")
+
+    iface_ids = [i.id for i in diag.interfaces]
+    if body.interface_id not in iface_ids:
+        raise HTTPException(status_code=400, detail=f"Interface '{body.interface_id}' não encontrada")
+
+    seconds = body.max_duration_seconds + 60
+    return submit(request, "network_capture", body.model_dump(), _run_network_capture, seconds=seconds)
+
+
+@app.post("/api/network/captures/{capture_id}/stop")
+async def api_network_stop(capture_id: str, _: str = Depends(require_session), __: None = Depends(verify_csrf)):
+    service = NetworkService()
+    try:
+        result = await run_in_threadpool(service.stop_capture, capture_id)
+        return {
+            "id": result.id,
+            "status": result.status.value,
+            "error": result.error,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
 
 
 @app.post("/api/config/web")

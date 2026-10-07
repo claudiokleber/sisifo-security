@@ -47,6 +47,11 @@ class SisifoApp {
         document.getElementById('preview-analysis')?.addEventListener('click', () => this.previewAnalysis());
         document.getElementById('import-form')?.addEventListener('submit', (e) => this.importNmap(e));
 
+        // Network
+        document.getElementById('network-doctor-btn')?.addEventListener('click', () => this.loadNetworkDiagnostics());
+        document.getElementById('network-import-form')?.addEventListener('submit', (e) => this.importNetworkCapture(e));
+        document.getElementById('network-refresh-captures')?.addEventListener('click', () => this.loadNetworkCaptures());
+
         // OSINT
         document.getElementById('osint-query-form')?.addEventListener('submit', (e) => this.submitOsintQuery(e));
 
@@ -69,6 +74,7 @@ class SisifoApp {
 
         if (tabName === 'sessions') this.loadSessions();
         else if (tabName === 'reports') this.loadReportSessionIds();
+        else if (tabName === 'network') this.loadNetworkCaptures();
         else if (tabName === 'osint') this.loadOsintConnectors();
         else if (tabName === 'config') this.loadConfigStatus();
     }
@@ -509,6 +515,330 @@ class SisifoApp {
             form.reset();
             window.location.href = '/login';
         } catch (err) { this.showToast(err.message, 'error'); }
+    }
+
+    async loadNetworkDiagnostics() {
+        const btn = document.getElementById('network-doctor-btn');
+        btn.disabled = true;
+        btn.textContent = 'Verificando...';
+        try {
+            const data = await this.api('/api/network/diagnostics');
+            const pre = document.getElementById('network-diagnostics');
+            pre.textContent = JSON.stringify(data, null, 2);
+            pre.classList.remove('hidden');
+            this.showToast('Diagnóstico concluído', 'success');
+        } catch (err) {
+            this.showToast('Erro no diagnóstico: ' + err.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Verificar';
+        }
+    }
+
+    async loadNetworkCaptures() {
+        try {
+            const data = await this.api('/api/network/captures');
+            const tbody = document.querySelector('#network-captures-table tbody');
+            tbody.innerHTML = data.captures.map(c => `
+                <tr data-id="${this.escapeHtml(c.id)}">
+                    <td><code>${this.escapeHtml(c.id.slice(0, 16))}...</code></td>
+                    <td>${this.escapeHtml(c.source)}</td>
+                    <td><span class="status status-${c.status}">${c.status}</span></td>
+                    <td>${this.escapeHtml(c.interface_name || c.interface_id || '-')}</td>
+                    <td>${c.packet_count.toLocaleString()}</td>
+                    <td>${c.file_size.toLocaleString()} bytes</td>
+                    <td>${this.formatDate(c.created_at)}</td>
+                    <td>
+                        <div class="actions">
+                            <button class="btn btn-secondary btn-small" onclick="app.showNetworkCaptureDetail('${this.escapeHtml(c.id)}')">Detalhes</button>
+                            <button class="btn btn-secondary btn-small" onclick="app.loadNetworkPackets('${this.escapeHtml(c.id)}')">Pacotes</button>
+                            <button class="btn btn-secondary btn-small" onclick="app.loadNetworkStats('${this.escapeHtml(c.id)}')">Estatísticas</button>
+                            <button class="btn btn-secondary btn-small" onclick="app.loadNetworkReport('${this.escapeHtml(c.id)}')">Relatório</button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+            tbody.querySelectorAll('tr').forEach(tr => {
+                tr.addEventListener('click', (e) => {
+                    if (!e.target.closest('button')) {
+                        this.showNetworkCaptureDetail(tr.dataset.id);
+                    }
+                });
+            });
+        } catch (err) {
+            this.showToast('Erro ao carregar capturas: ' + err.message, 'error');
+        }
+    }
+
+    async importNetworkCapture(e) {
+        e.preventDefault();
+        const form = e.target;
+        const button = form.querySelector('button[type="submit"]');
+        button.disabled = true;
+        button.textContent = 'Importando...';
+        try {
+            const formData = new FormData(form);
+            const result = await this.api('/api/network/import', {
+                method: 'POST',
+                headers: {'X-CSRF-Token': this.csrfToken},
+                body: formData
+            });
+            this.showToast('Captura importada: ' + result.id, 'success');
+            form.reset();
+            document.getElementById('network-import-result').classList.remove('hidden');
+            document.getElementById('network-import-result').textContent = JSON.stringify(result, null, 2);
+            this.loadNetworkCaptures();
+        } catch (error) {
+            this.showToast('Erro na importação: ' + error.message, 'error');
+        } finally {
+            button.disabled = false;
+            button.textContent = 'Importar';
+        }
+    }
+
+    async showNetworkCaptureDetail(captureId) {
+        try {
+            const data = await this.api(`/api/network/captures/${captureId}`);
+            const panel = document.getElementById('network-capture-detail');
+            panel.classList.remove('hidden');
+            panel.innerHTML = `
+                <h3>Detalhes da Captura: ${this.escapeHtml(data.id)}</h3>
+                <div class="grid grid-2">
+                    <div>
+                        <p><strong>Origem:</strong> ${this.escapeHtml(data.source)}</p>
+                        <p><strong>Status:</strong> <span class="status status-${data.status}">${data.status}</span></p>
+                        <p><strong>Interface:</strong> ${this.escapeHtml(data.interface_name || data.interface_id || '-')}</p>
+                        <p><strong>Filtro de captura (BPF):</strong> ${this.escapeHtml(data.capture_filter || '-')}</p>
+                        <p><strong>Filtro de exibição:</strong> ${this.escapeHtml(data.display_filter || '-')}</p>
+                        <p><strong>Arquivo:</strong> ${this.escapeHtml(data.file_path)}</p>
+                        <p><strong>Tamanho:</strong> ${data.file_size.toLocaleString()} bytes</p>
+                        <p><strong>SHA-256:</strong> ${this.escapeHtml(data.file_sha256 || '-')}</p>
+                        <p><strong>Pacotes:</strong> ${data.packet_count.toLocaleString()}</p>
+                        <p><strong>Pacotes perdidos (captura):</strong> ${data.dropped_packets}</p>
+                        <p><strong>Pacotes perdidos (interface):</strong> ${data.dropped_by_interface}</p>
+                        <p><strong>TShark:</strong> ${this.escapeHtml(data.tshark_version || '-')}</p>
+                        <p><strong>Dumpcap:</strong> ${this.escapeHtml(data.dumpcap_version || '-')}</p>
+                        <p><strong>Ambiente:</strong> ${this.escapeHtml(data.environment)}</p>
+                    </div>
+                    <div>
+                        <p><strong>Criada em:</strong> ${this.formatDate(data.created_at)}</p>
+                        <p><strong>Iniciada em:</strong> ${this.formatDate(data.started_at)}</p>
+                        <p><strong>Finalizada em:</strong> ${this.formatDate(data.finished_at)}</p>
+                        ${data.error ? `<p><strong>Erro:</strong> <span class="job-error">${this.escapeHtml(data.error)}</span></p>` : ''}
+                    </div>
+                </div>
+                <div class="actions" style="margin-top: 1rem;">
+                    <button class="btn btn-secondary btn-small" onclick="app.loadNetworkPackets('${this.escapeHtml(data.id)}')">Ver Pacotes</button>
+                    <button class="btn btn-secondary btn-small" onclick="app.loadNetworkStats('${this.escapeHtml(data.id)}')">Ver Estatísticas</button>
+                    <button class="btn btn-secondary btn-small" onclick="app.loadNetworkReport('${this.escapeHtml(data.id)}')">Gerar Relatório</button>
+                    <button class="btn btn-secondary btn-small" onclick="app.openNetworkInWireshark('${this.escapeHtml(data.id)}')">Abrir no Wireshark</button>
+                </div>
+            `;
+        } catch (err) {
+            this.showToast('Erro ao carregar detalhes: ' + err.message, 'error');
+        }
+    }
+
+    async loadNetworkPackets(captureId) {
+        try {
+            const result = await this.api(`/api/network/captures/${captureId}/packets`, {
+                method: 'POST',
+                body: JSON.stringify({display_filter: '', offset: 0, limit: 100})
+            });
+            const panel = document.getElementById('network-capture-detail');
+            panel.classList.remove('hidden');
+            panel.innerHTML = `
+                <h3>Pacotes da Captura: ${this.escapeHtml(captureId)}</h3>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr><th>#</th><th>Tempo (s)</th><th>Origem</th><th>Destino</th><th>Protocolo</th><th>Tam.</th><th>Info</th></tr>
+                        </thead>
+                        <tbody>
+                            ${result.packets.map(p => `
+                                <tr data-packet="${p.number}" style="cursor: pointer;">
+                                    <td>${p.number}</td>
+                                    <td>${p.time.toFixed(6)}</td>
+                                    <td>${this.escapeHtml(p.source)}</td>
+                                    <td>${this.escapeHtml(p.destination)}</td>
+                                    <td>${this.escapeHtml(p.protocol)}</td>
+                                    <td>${p.length}</td>
+                                    <td>${this.escapeHtml(p.info.slice(0, 120))}${p.info.length > 120 ? '...' : ''}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+                <p>Clique em um pacote para ver detalhes.</p>
+            `;
+            panel.querySelectorAll('tbody tr').forEach(tr => {
+                tr.addEventListener('click', () => {
+                    this.loadNetworkPacketDetail(captureId, parseInt(tr.dataset.packet));
+                });
+            });
+        } catch (err) {
+            this.showToast('Erro ao carregar pacotes: ' + err.message, 'error');
+        }
+    }
+
+    async loadNetworkPacketDetail(captureId, packetNumber) {
+        try {
+            const detail = await this.api(`/api/network/captures/${captureId}/packets/${packetNumber}`);
+            const panel = document.getElementById('network-capture-detail');
+            panel.classList.remove('hidden');
+            panel.innerHTML = `
+                <h3>Pacote #${detail.number} - Captura: ${this.escapeHtml(captureId)}</h3>
+                <div class="grid grid-2">
+                    <div>
+                        <p><strong>Tempo:</strong> ${detail.time.toFixed(6)}s (${this.escapeHtml(detail.time_iso)})</p>
+                        <p><strong>Origem:</strong> ${this.escapeHtml(detail.source)}</p>
+                        <p><strong>Destino:</strong> ${this.escapeHtml(detail.destination)}</p>
+                        <p><strong>Protocolo:</strong> ${this.escapeHtml(detail.protocol)}</p>
+                        <p><strong>Tamanho:</strong> ${detail.length} bytes</p>
+                        <p><strong>Info:</strong> ${this.escapeHtml(detail.info)}</p>
+                    </div>
+                    <div>
+                        <button class="btn btn-secondary btn-small" onclick="app.loadNetworkPackets('${this.escapeHtml(captureId)}')">Voltar à lista</button>
+                    </div>
+                </div>
+                ${detail.layers && detail.layers.length ? `
+                    <h4>Árvore de Protocolos</h4>
+                    <pre>${JSON.stringify(detail.layers, null, 2)}</pre>
+                ` : ''}
+                ${detail.hex_dump ? `
+                    <h4>Hex Dump</h4>
+                    <pre>${this.escapeHtml(detail.hex_dump)}</pre>
+                ` : ''}
+            `;
+        } catch (err) {
+            this.showToast('Erro ao carregar detalhes do pacote: ' + err.message, 'error');
+        }
+    }
+
+    async loadNetworkStats(captureId) {
+        try {
+            const data = await this.api(`/api/network/captures/${captureId}/stats`, {
+                method: 'POST',
+                body: JSON.stringify({display_filter: ''})
+            });
+            const panel = document.getElementById('network-capture-detail');
+            panel.classList.remove('hidden');
+            panel.innerHTML = `
+                <h3>Estatísticas da Captura: ${this.escapeHtml(captureId)}</h3>
+                <h4>Hierarquia de Protocolos</h4>
+                <div class="table-container">
+                    <table>
+                        <thead><tr><th>Protocolo</th><th>Pacotes</th><th>% Pacotes</th><th>Bytes</th><th>% Bytes</th></tr></thead>
+                        <tbody>
+                            ${data.protocol_stats.by_protocol.map(p => `
+                                <tr>
+                                    <td>${this.escapeHtml(p.protocol)}</td>
+                                    <td>${p.packets.toLocaleString()}</td>
+                                    <td>${p.percentage_packets.toFixed(1)}%</td>
+                                    <td>${p.bytes.toLocaleString()}</td>
+                                    <td>${p.percentage_bytes.toFixed(1)}%</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+                <p>Total: ${data.protocol_stats.total_packets.toLocaleString()} pacotes, ${data.protocol_stats.total_bytes.toLocaleString()} bytes</p>
+
+                <h4>Endpoints (Top 50)</h4>
+                <div class="table-container">
+                    <table>
+                        <thead><tr><th>Endereço</th><th>Tipo</th><th>RX Pkts</th><th>TX Pkts</th><th>RX Bytes</th><th>TX Bytes</th></tr></thead>
+                        <tbody>
+                            ${data.endpoints.map(e => `
+                                <tr>
+                                    <td>${this.escapeHtml(e.address)}</td>
+                                    <td>${this.escapeHtml(e.type)}</td>
+                                    <td>${e.packets_rx.toLocaleString()}</td>
+                                    <td>${e.packets_tx.toLocaleString()}</td>
+                                    <td>${e.bytes_rx.toLocaleString()}</td>
+                                    <td>${e.bytes_tx.toLocaleString()}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+
+                <h4>Conversações (Top 50)</h4>
+                <div class="table-container">
+                    <table>
+                        <thead><tr><th>A ↔ B</th><th>Protocolo</th><th>Pacotes</th><th>Bytes</th><th>Duração (s)</th></tr></thead>
+                        <tbody>
+                            ${data.conversations.map(c => `
+                                <tr>
+                                    <td>${this.escapeHtml(c.endpoint_a)} ↔ ${this.escapeHtml(c.endpoint_b)}</td>
+                                    <td>${this.escapeHtml(c.protocol)}</td>
+                                    <td>${c.packets.toLocaleString()}</td>
+                                    <td>${c.bytes.toLocaleString()}</td>
+                                    <td>${c.duration.toFixed(3)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+
+                <h4>DNS</h4>
+                <pre>${JSON.stringify(data.dns, null, 2)}</pre>
+
+                <h4>TCP</h4>
+                <pre>${JSON.stringify(data.tcp, null, 2)}</pre>
+                <button class="btn btn-secondary btn-small" onclick="app.showNetworkCaptureDetail('${this.escapeHtml(captureId)}')">Voltar</button>
+            `;
+        } catch (err) {
+            this.showToast('Erro ao carregar estatísticas: ' + err.message, 'error');
+        }
+    }
+
+    async loadNetworkReport(captureId) {
+        try {
+            const data = await this.api(`/api/network/captures/${captureId}/report`, {
+                method: 'POST',
+                body: JSON.stringify({display_filter: ''})
+            });
+            const panel = document.getElementById('network-capture-detail');
+            panel.classList.remove('hidden');
+            panel.innerHTML = `
+                <h3>Relatório da Captura: ${this.escapeHtml(data.capture_id)}</h3>
+                <div class="grid grid-2">
+                    <div>
+                        <p><strong>Pacotes:</strong> ${data.summary.packet_count.toLocaleString()}</p>
+                        <p><strong>Protocolos:</strong> ${data.protocol_stats.by_protocol.length}</p>
+                        <p><strong>Endpoints:</strong> ${data.endpoints.length}</p>
+                        <p><strong>Conversações:</strong> ${data.conversations.length}</p>
+                        <p><strong>Anomalias:</strong> ${data.anomalies.length}</p>
+                    </div>
+                    <div>
+                        <p><strong>Origem:</strong> ${this.escapeHtml(data.summary.source)}</p>
+                        <p><strong>Status:</strong> <span class="status status-${data.summary.status}">${data.summary.status}</span></p>
+                        <p><strong>Tamanho do arquivo:</strong> ${data.summary.file_size.toLocaleString()} bytes</p>
+                    </div>
+                </div>
+                <h4>Anomalias</h4>
+                <ul>
+                    ${data.anomalies.map(a => `<li>${this.escapeHtml(a)}</li>`).join('') || '<li>Nenhuma</li>'}
+                </ul>
+                <h4>Limitações</h4>
+                <ul>
+                    ${data.limitations.map(l => `<li>${this.escapeHtml(l)}</li>`).join('')}
+                </ul>
+                <button class="btn btn-secondary btn-small" onclick="app.showNetworkCaptureDetail('${this.escapeHtml(captureId)}')">Voltar</button>
+            `;
+        } catch (err) {
+            this.showToast('Erro ao gerar relatório: ' + err.message, 'error');
+        }
+    }
+
+    async openNetworkInWireshark(captureId) {
+        try {
+            await this.api(`/api/network/captures/${captureId}/open-wireshark`, {method: 'POST'});
+            this.showToast('Wireshark iniciado', 'success');
+        } catch (err) {
+            this.showToast('Erro ao abrir Wireshark: ' + err.message, 'error');
+        }
     }
 
     trackJob(jobId, type) {

@@ -18,3 +18,17 @@ jobs:
       - run: python -m pytest -q
       - run: python -m ruff check sisifo tests
       - run: python -m build
+
+  network-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: sudo apt-get update && sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y tshark
+      - run: python -m pip install -e ".[dev,web]"
+      - run: tshark --version && capinfos --version
+      - run: python -m pytest tests/test_network.py -q
+        env:
+          SISIFO_REQUIRE_TSHARK: '1'

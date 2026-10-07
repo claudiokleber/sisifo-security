@@ -17,6 +17,7 @@
                 <button class="tab-btn" data-tab="reports">Relatórios</button>
                 <button class="tab-btn" data-tab="scan">Nova Execução</button>
                 <button class="tab-btn" data-tab="analyze">Análise IA</button>
+                <button class="tab-btn" data-tab="network">Rede</button>
                 <button class="tab-btn" data-tab="osint">OSINT</button>
                 <button class="tab-btn" data-tab="config">Configurações</button>
             </nav>
@@ -205,6 +206,54 @@
                 <pre id="analysis-preview" class="hidden"></pre>
             </form>
             <div id="analyze-jobs" class="jobs-list"></div>
+        </section>
+
+        <section id="tab-network" class="tab-panel">
+            <h2>Monitoramento e Análise de Rede</h2>
+            <div class="grid grid-2">
+                <div class="card">
+                    <h3>Diagnóstico de Dependências</h3>
+                    <button id="network-doctor-btn" class="btn btn-secondary">Verificar</button>
+                    <pre id="network-diagnostics" class="hidden"></pre>
+                </div>
+                <div class="card">
+                    <h3>Importar PCAP/PCAPNG</h3>
+                    <form id="network-import-form">
+                        <div class="form-group">
+                            <label for="network-import-file">Arquivo (até 500 MB)</label>
+                            <input id="network-import-file" type="file" name="file" accept=".pcap,.pcapng" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="network-import-display-filter">Filtro de exibição (opcional)</label>
+                            <input id="network-import-display-filter" type="text" name="display_filter" placeholder="ex.: dns || http">
+                        </div>
+                        <button type="submit" class="btn btn-primary">Importar</button>
+                    </form>
+                    <div id="network-import-result" class="hidden"></div>
+                </div>
+            </div>
+            <div class="card">
+                <h3>Capturas</h3>
+                <div class="table-container">
+                    <table id="network-captures-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Origem</th>
+                                <th>Status</th>
+                                <th>Interface</th>
+                                <th>Pacotes</th>
+                                <th>Tamanho</th>
+                                <th>Criada em</th>
+                                <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+                <button id="network-refresh-captures" class="btn btn-secondary" style="margin-top: 0.5rem;">Atualizar</button>
+            </div>
+            <div id="network-capture-detail" class="detail-panel hidden"></div>
         </section>
 
         <section id="tab-osint" class="tab-panel">
