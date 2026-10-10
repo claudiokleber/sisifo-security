@@ -32,3 +32,28 @@ jobs:
       - run: python -m pytest tests/test_network.py -q
         env:
           SISIFO_REQUIRE_TSHARK: '1'
+
+  native-installation:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install and smoke without Docker
+        shell: python
+        run: |
+          import os, pathlib, subprocess, tempfile
+          root = pathlib.Path(tempfile.mkdtemp()) / 'sisifo test space'
+          os.environ['SISIFO_INSTALL_DIR'] = str(root)
+          if os.name == 'nt':
+              subprocess.run(['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'install.ps1'], check=True)
+              command = [str(root / 'bin/sisifo.bat')]
+          else:
+              subprocess.run(['bash', 'install.sh'], check=True)
+              command = [str(root / 'bin/sisifo')]
+          subprocess.run(command + ['--help'], cwd=tempfile.gettempdir(), check=True)
+          subprocess.run(command + ['repair'], cwd=tempfile.gettempdir(), check=True)

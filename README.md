@@ -343,3 +343,29 @@ Migration from v1 config is automatic and reversible — the old format is detec
 ## License
 
 [Docker SDK](https://docker-py.readthedocs.io/en/stable/containers.html) · [Nmap XML](https://nmap.org/book/output-formats-xml-output.html) · [Nikto Docker](https://github.com/sullo/nikto/wiki/Docker) · [Ollama Chat API](https://docs.ollama.com/api/chat) · [NVIDIA API](https://docs.api.nvidia.com/nim/reference/llm-apis)
+
+
+## Instalação nativa independente
+
+Execute `install.ps1` (Windows) ou `bash install.sh` (Linux) e abra um novo terminal: `sisifo`. Docker não é requisito para o menu/web. Atualização validada antes da ativação, reparo e rollback: veja [Instalação nativa](docs/INSTALACAO-NATIVA.md). `--with-docker` prepara containers opcionalmente.
+
+
+## IA conversacional e conexão por API
+
+Use `sisifo setup` para informar o endereço da API e a chave, buscar modelos e
+testar a conexão. Depois, `sisifo chat` abre a conversa no terminal;
+`sisifo chat --session ID` inclui evidências com prévia e confirmação.
+Na web, use **Configurações → Conexão com a IA** e **Análise IA**.
+O novo assistente substitui a escolha obrigatória entre marcas. Configurações
+anteriores continuam compatíveis. APIs precisam implementar o protocolo suportado;
+a chave sozinha não identifica todos os serviços.
+Veja [uso, compatibilidade e limites](docs/IA-CONVERSACIONAL.md).
+
+
+## Terminal OSINT e ajuda
+
+Após instalar ou atualizar, use `sisifo help` e `sisifo osint terminal`.
+O terminal guia a consulta e permite selecionar resultados para interpretação pela IA,
+com prévia sanitizada e confirmação separada. A aba OSINT oferece o mesmo fluxo.
+Use `sisifo osint config hibp` para configurar a chave e `sisifo osint --help` para opções.
+[Contrato, rotas e limitações](docs/OSINT-INTEGRACOES.md).

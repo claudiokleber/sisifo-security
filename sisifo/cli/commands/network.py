@@ -18,7 +18,8 @@ from sisifo.modules.network.models import (
     DisplayFilter,
 )
 
-console = Console(markup=False)
+# Use ASCII-safe console on Windows to avoid encoding issues with special characters
+console = Console(markup=False, legacy_windows=True, force_terminal=True, color_system=None)
 
 app = typer.Typer(help="Monitoramento e análise de rede.", no_args_is_help=True)
 
@@ -234,27 +235,18 @@ def packets(
         console.print("Nenhum pacote encontrado.")
         return
 
-    table = Table(title=f"Pacotes ({len(packets)} exibidos, offset={offset})")
-    table.add_column("#", justify="right", style="cyan")
-    table.add_column("Tempo (s)", justify="right")
-    table.add_column("Origem", style="green")
-    table.add_column("Destino", style="green")
-    table.add_column("Protocolo", style="yellow")
-    table.add_column("Tam.", justify="right")
-    table.add_column("Info")
-
+    # Use simple ASCII table to avoid encoding issues on Windows
+    title = f"Pacotes ({len(packets)} exibidos, offset={offset})"
+    print(title)
+    # Header
+    header = f"{'#':>4}  {'Tempo (s)':>12}  {'Origem':<20}  {'Destino':<20}  {'Protocolo':<10}  {'Tam.':>6}  {'Info'}"
+    print(header)
+    print("-" * len(header))
     for p in packets:
-        table.add_row(
-            str(p.number),
-            f"{p.time:.6f}",
-            p.source,
-            p.destination,
-            p.protocol,
-            str(p.length),
-            p.info[:120] + ("..." if len(p.info) > 120 else ""),
-        )
-
-    console.print(table)
+        info = p.info[:120] + ("..." if len(p.info) > 120 else "")
+        row = f"{p.number:>4}  {p.time:>12.6f}  {p.source:<20}  {p.destination:<20}  {p.protocol:<10}  {p.length:>6}  {info}"
+        print(row)
+    return
 
 
 @app.command()
@@ -306,63 +298,30 @@ def stats(
 
         console.print("[bold]Hierarquia de Protocolos[/bold]")
         proto_stats = service.get_protocol_stats(capture_id, display_filter=df)
-        proto_table = Table()
-        proto_table.add_column("Protocolo", style="cyan")
-        proto_table.add_column("Pacotes", justify="right")
-        proto_table.add_column("% Pacotes", justify="right")
-        proto_table.add_column("Bytes", justify="right")
-        proto_table.add_column("% Bytes", justify="right")
+        print("Hierarquia de Protocolos")
+        print("Protocolo                    Pacotes  % Pacotes  Bytes    % Bytes")
+        print("-" * 65)
         for item in proto_stats.by_protocol:
-            proto_table.add_row(
-                item.protocol,
-                f"{item.packets:,}",
-                f"{item.percentage_packets:.1f}%",
-                f"{item.bytes:,}",
-                f"{item.percentage_bytes:.1f}%",
-            )
-        console.print(proto_table)
-        console.print(f"Total: {proto_stats.total_packets:,} pacotes, {proto_stats.total_bytes:,} bytes")
-        console.print()
+            print(f"{item.protocol:<28} {item.packets:>8,}  {item.percentage_packets:>8.1f}%  {item.bytes:>8,}  {item.percentage_bytes:>7.1f}%")
+        print(f"Total: {proto_stats.total_packets:,} pacotes, {proto_stats.total_bytes:,} bytes")
+        print()
 
-        console.print("[bold]Endpoints (Top 20)[/bold]")
         endpoints = service.get_endpoints(capture_id, display_filter=df)[:20]
-        ep_table = Table()
-        ep_table.add_column("Endereço", style="cyan")
-        ep_table.add_column("Tipo", style="green")
-        ep_table.add_column("RX Pkts", justify="right")
-        ep_table.add_column("TX Pkts", justify="right")
-        ep_table.add_column("RX Bytes", justify="right")
-        ep_table.add_column("TX Bytes", justify="right")
+        print("Endpoints (Top 20)")
+        print("Endereco                          Tipo      RX Pkts  TX Pkts  RX Bytes    TX Bytes")
+        print("-" * 75)
         for ep in endpoints:
-            ep_table.add_row(
-                ep.address,
-                ep.type,
-                f"{ep.packets_rx:,}",
-                f"{ep.packets_tx:,}",
-                f"{ep.bytes_rx:,}",
-                f"{ep.bytes_tx:,}",
-            )
-        console.print(ep_table)
-        console.print()
+            print(f"{ep.address:<32} {ep.type:<8} {ep.packets_rx:>8,} {ep.packets_tx:>8,} {ep.bytes_rx:>10,} {ep.bytes_tx:>10,}")
+        print()
 
         console.print("[bold]Conversações (Top 20)[/bold]")
         conversations = service.get_conversations(capture_id, display_filter=df)[:20]
-        conv_table = Table()
-        conv_table.add_column("A ↔ B", style="cyan")
-        conv_table.add_column("Protocolo", style="green")
-        conv_table.add_column("Pacotes", justify="right")
-        conv_table.add_column("Bytes", justify="right")
-        conv_table.add_column("Duração (s)", justify="right")
+        # Use simple print to avoid encoding issues
+        print("A <=> B                                    Protocolo  Pacotes  Bytes      Duracao (s)")
+        print("-" * 80)
         for conv in conversations:
-            conv_table.add_row(
-                f"{conv.endpoint_a} ↔ {conv.endpoint_b}",
-                conv.protocol,
-                f"{conv.packets:,}",
-                f"{conv.bytes:,}",
-                f"{conv.duration:.3f}",
-            )
-        console.print(conv_table)
-        console.print()
+            print(f"{conv.endpoint_a} <=> {conv.endpoint_b:<35} {conv.protocol:<10} {conv.packets:>8,}  {conv.bytes:>10,}  {conv.duration:.3f}")
+        print()
 
         dns = service.get_dns_summary(capture_id, display_filter=df)
         console.print(f"[bold]DNS:[/bold] {len(dns.get('queries', []))} consultas")

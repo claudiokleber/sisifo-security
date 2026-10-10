@@ -2,9 +2,11 @@ from typing import Dict, Type
 
 from sisifo.osint.contract import BaseConnector
 from sisifo.osint.dummy import DummyConnector
+from sisifo.osint.hibp import HibpConnector
 
 _registry: Dict[str, Type[BaseConnector]] = {
     "dummy": DummyConnector,
+    "hibp": HibpConnector,
 }
 
 

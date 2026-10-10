@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sísifo - Interface Web</title>
     {% include "brand-head.html" %}
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v=osint-ux-3">
 </head>
 <body>
     <header>
@@ -154,18 +154,38 @@
 
         <section id="tab-analyze" class="tab-panel">
             <h2>Análise por IA</h2>
-            <form id="analyze-form" class="card">
+            <div class="card">
+                <h3>Converse com o assistente</h3>
+                <p id="chat-connection" class="ai-connection-badge">Configure sua conexão em Configurações.</p>
+                <p>Tire dúvidas e planeje verificações. As mensagens vão à API configurada; o assistente não executa ferramentas. Histórico apenas nesta página.</p>
+                <form id="ai-chat-form">
+                    <details class="ai-context"><summary>Adicionar contexto de uma sessão (opcional)</summary>
+                    <label for="chat-session">Sessão opcional para contexto</label>
+                    <input id="chat-session" placeholder="ID da sessão" pattern="[a-f0-9]{32}">
+                    <button type="button" id="chat-preview" class="btn btn-secondary">Revisar contexto</button>
+                    <pre id="chat-context" class="hidden"></pre>
+                    <label><input type="checkbox" id="chat-consent"> Revisei e autorizo enviar o contexto desta sessão</label>
+                    </details>
+                    <div id="chat-messages" role="log" aria-live="polite"><p class="ai-empty">Comece com uma pergunta sobre as verificações ou os resultados que deseja entender.</p></div>
+                    <label for="chat-input">Sua mensagem</label>
+                    <textarea id="chat-input" required maxlength="8000" rows="3" placeholder="Quais verificações devo considerar e por quê?"></textarea>
+                    <div class="ai-chat-actions"><button type="submit" class="btn btn-primary">Enviar mensagem</button>
+                    <button type="button" id="chat-clear" class="btn btn-secondary">Nova conversa</button></div>
+                    <p id="chat-status" role="status"></p>
+                </form>
+            </div>
+            <details class="card"><summary>Gerar análise estruturada de uma sessão</summary>
+            <form id="analyze-form">
                 <div class="form-group">
                     <label for="analyze-session">Sessão *</label>
                     <input type="text" id="analyze-session" name="session_id" required placeholder="ID da sessão">
                 </div>
                 <div class="form-row">
                     <div class="form-group">
-                        <label for="analyze-provider">Provedor</label>
+                        <label for="analyze-provider">Modo de análise</label>
                         <select id="analyze-provider" name="provider">
                             <option value="">Padrão (configurado)</option>
-                            <option value="nvidia">NVIDIA</option>
-                            <option value="ollama">Ollama</option>
+                            
                             <option value="export">Exportar (offline)</option>
                         </select>
                     </div>
@@ -194,17 +214,18 @@
                 </div>
                 <div class="form-group">
                     <label for="analyze-endpoint">Endpoint (opcional)</label>
-                    <input type="text" id="analyze-endpoint" name="endpoint" placeholder="ex.: http://ollama:11434">
+                    <input type="text" id="analyze-endpoint" name="endpoint" placeholder="Use o endereço configurado">
                 </div>
                 <div class="info-box">
                     <strong>Dados enviados:</strong> Evidências da sessão (resumo, achados, metadados).
-                    <br><strong>Destino:</strong> API do provedor selecionado (NVIDIA/Ollama local).
+                    <br><strong>Destino:</strong> API configurada em Configurações.
                     <br><strong>Revisão:</strong> O vault e arquivos de configuração não são incluídos. O mascaramento de evidências é heurístico: revise a exportação offline antes de enviar dados sensíveis.
                 </div>
                 <button type="button" id="preview-analysis" class="btn btn-secondary">Revisar dados (offline)</button>
                 <button type="submit" class="btn btn-primary">Iniciar Análise</button>
                 <pre id="analysis-preview" class="hidden"></pre>
             </form>
+            </details>
             <div id="analyze-jobs" class="jobs-list"></div>
         </section>
 
@@ -224,7 +245,7 @@
                             <input id="network-import-file" type="file" name="file" accept=".pcap,.pcapng" required>
                         </div>
                         <div class="form-group">
-                            <label for="network-import-display-filter">Filtro de exibição (opcional)</label>
+                            <label for="network-import-display-filter">Filtro de exibição para visualização inicial (opcional)</label>
                             <input id="network-import-display-filter" type="text" name="display_filter" placeholder="ex.: dns || http">
                         </div>
                         <button type="submit" class="btn btn-primary">Importar</button>
@@ -257,64 +278,99 @@
         </section>
 
         <section id="tab-osint" class="tab-panel">
-            <h2>Integrações OSINT</h2>
+            <h2>Verificar informações com OSINT</h2>
+            <p>Consulte fontes de informação para entender possíveis exposições. Você revisa cada envio antes de continuar.</p>
+            <ol class="osint-steps"><li>Escolha e configure um serviço</li><li>Informe o que deseja verificar</li><li>Leia os resultados e, se quiser, peça ajuda à IA</li></ol>
+            <p id="osint-status" role="status" aria-live="polite"></p>
+            
+            <!-- Formulário guiado (existente, aprimorado) -->
+            <div class="card" id="osint-guided-form">
+                <h3>Fazer uma verificação</h3>
+                <form id="osint-query-form">
+                    <div class="form-group">
+                        <label for="osint-connector">Serviço de consulta</label>
+                        <select id="osint-connector" name="connector_id" required></select>
+                        <small id="osint-connector-help" class="dim"></small>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="osint-query-type">Tipo de consulta</label>
+                            <select id="osint-query-type" name="query_type" required></select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="osint-query">O que você deseja verificar? *</label>
+                        <input type="text" id="osint-query" name="query" required placeholder="ex.: usuario@dominio.com">
+                        <small id="osint-query-hint" class="dim"></small>
+                    </div>
+                    <div id="osint-preview" class="hidden card" style="margin-top: 1rem;">
+                        <h4>Prévia da consulta</h4>
+                        <div id="osint-preview-details"></div>
+                        <div class="form-row" style="margin-top: 0.5rem;">
+                            <button type="button" id="osint-execute-preview" class="btn btn-primary">Executar</button>
+                            <button type="button" id="osint-cancel-preview" class="btn btn-secondary">Cancelar</button>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="margin-top: 1rem;">Revisar e consultar</button>
+                </form>
+            </div>
+
             <div class="grid grid-2">
                 <div class="card">
-                    <h3>Conectores Disponíveis</h3>
+                    <h3>Serviços disponíveis</h3>
                     <div id="osint-connectors" class="list"></div>
                 </div>
-                <div class="card">
-                    <h3>Consulta</h3>
-                    <form id="osint-query-form">
-                        <div class="form-group">
-                            <label for="osint-connector">Conector</label>
-                            <select id="osint-connector" name="connector_id" required></select>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="osint-query-type">Tipo</label>
-                                <select id="osint-query-type" name="query_type" required>
-                                    <option value="domain">Domínio</option>
-                                    <option value="ip">IP</option>
-                                    <option value="url">URL</option>
-                                    <option value="hash">Hash</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label for="osint-query">Consulta *</label>
-                            <input type="text" id="osint-query" name="query" required placeholder="ex.: example.com">
-                        </div>
-                        <button type="submit" class="btn btn-primary">Consultar</button>
-                    </form>
-                </div>
             </div>
-            <div id="osint-jobs" class="jobs-list"></div>
+            <!-- Área: Investigar com OSINT -->
+            <details class="card" id="osint-investigate">
+                <summary>Prefere descrever o que deseja? Use uma sugestão assistida (opcional)</summary>
+                <p class="dim">Descreva o que deseja verificar ou use o formulário guiado abaixo.</p>
+                
+                <div class="form-group">
+                    <label for="osint-objective">Objetivo da investigação</label>
+                    <textarea id="osint-objective" rows="3" placeholder="Ex.: Quero verificar se meu e-mail aparece em vazamentos conhecidos."></textarea>
+                    <small>Se a IA estiver configurada, ela sugerirá o serviço e a consulta apropriados.</small>
+                </div>
+                <button type="button" id="osint-analyze-objective" class="btn btn-primary">Analisar objetivo</button>
+                
+                <div id="osint-proposal" class="hidden card" style="margin-top: 1rem;">
+                    <h4>Proposta de consulta</h4>
+                    <div id="osint-proposal-details"></div>
+                    <div class="form-row" style="margin-top: 1rem;">
+                        <button type="button" id="osint-confirm-proposal" class="btn btn-primary">Revisar esta sugestão</button>
+                        <button type="button" id="osint-reject-proposal" class="btn btn-secondary">Cancelar</button>
+                    </div>
+                </div>
+            </details>
+
+            <h3>Suas consultas</h3><p class="dim">Os resultados aparecerão abaixo. Você pode cancelar uma consulta em andamento.</p><div id="osint-jobs" class="jobs-list" aria-live="polite"></div>
         </section>
 
         <section id="tab-config" class="tab-panel">
             <h2>Configurações</h2>
             <div class="grid grid-2">
                 <div class="card">
-                    <h3>IA / NVIDIA</h3>
+                    <h3>Conexão com a IA</h3>
+                    <p>Informe o endereço do seu serviço e a chave da sua conta. Suporte a APIs compatíveis com /models e /chat/completions. A chave sozinha não identifica todos os serviços.</p>
                     <form id="config-ai-form">
                         <div class="form-group">
-                            <label for="config-provider">Provedor</label>
-                            <select id="config-provider" name="provider">
-                                <option value="nvidia">NVIDIA</option>
-                                <option value="ollama">Ollama</option>
-                                <option value="export">Exportar (offline)</option>
-                            </select>
+                            <label for="config-endpoint">1. Endereço base da API</label>
+                            <input type="url" id="config-endpoint" name="endpoint" required placeholder="https://seu-servico.example/v1" autocomplete="off">
                         </div>
                         <div class="form-group">
-                            <label for="config-model">Modelo</label>
-                            <input type="text" id="config-model" name="model" placeholder="ex.: nvidia/nemotron-3-super-120b-a12b">
+                            <label for="config-api-key">2. Chave de API</label>
+                            <input type="password" id="config-api-key" name="api_key" autocomplete="new-password">
+                            <small>Deixe vazio para manter a chave do mesmo endereço. APIs locais podem dispensar chave.</small>
                         </div>
+                        <button type="button" id="ai-discover" class="btn btn-secondary">Buscar modelos</button>
                         <div class="form-group">
-                            <label for="config-nvidia-key">Chave NVIDIA (nvapi-...)</label>
-                            <input type="password" id="config-nvidia-key" name="nvidia_key" autocomplete="new-password">
+                            <label for="config-model">3. Modelo</label>
+                            <input id="config-model" name="model" list="ai-models" required placeholder="Escolha da lista ou informe o identificador">
+                            <datalist id="ai-models"></datalist>
                         </div>
-                        <button type="submit" class="btn btn-primary">Salvar</button>
+                        <p id="ai-connection-status" role="status">A listagem não garante acesso a todos os modelos. O teste envia uma mensagem curta e pode consumir créditos.</p>
+                        <button type="submit" class="btn btn-primary">Testar conexão e salvar</button>
+                        <button type="button" id="ai-offline" class="btn btn-secondary">Usar modo offline</button>
                     </form>
                 </div>
                 <div class="card">
@@ -342,6 +398,6 @@
         <p>Sísifo v0.3.0 - Execução local apenas.</p>
     </footer>
     <div id="toast-container"></div>
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=osint-ux-3"></script>
 </body>
 </html>

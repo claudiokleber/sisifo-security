@@ -1,5 +1,6 @@
 """Cooperative cancellation, deadlines and process-owned file locks."""
 
+import asyncio
 import os
 import threading
 import time
@@ -61,3 +62,21 @@ def file_lock(path):
                 msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
             else:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+async def controlled(awaitable, control):
+    """Cancel in-flight HTTP/backoff tasks when the shared control expires."""
+    task = asyncio.ensure_future(awaitable)
+    try:
+        while not task.done():
+            if control:
+                control.check()
+            await asyncio.wait({task}, timeout=0.05)
+        if control:
+            control.check()
+        return await task
+    finally:
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+

@@ -1,5 +1,6 @@
 """Network monitoring and analysis module for Sísifo."""
 
+from .integration import register_network_integration
 from .models import (
     CaptureConfig,
     CaptureResult,
@@ -20,4 +21,5 @@ __all__ = [
     "NetworkService",
     "PacketSummary",
     "ProtocolStats",
+    "register_network_integration",
 ]

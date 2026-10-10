@@ -1,0 +1,33 @@
+# Network analysis Docker image with TShark/capinfos for offline PCAP analysis
+# This image is for offline analysis only - no capture capabilities
+FROM python:3.12-slim@sha256:dddfd7e07f9d15aeeca61529320492139d21cac7f0070c00609243e51e4e0016
+
+# Install Wireshark suite (tshark, capinfos) for PCAP analysis
+# Using non-interactive Debian frontend
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tshark \
+    && rm -rf /var/lib/apt/lists/*
+
+# Verify installation and record versions
+RUN tshark -v | head -1 && capinfos -v | head -1
+
+WORKDIR /app
+COPY requirements-docker.lock ./
+RUN pip install --no-cache-dir -r requirements-docker.lock
+COPY pyproject.toml README.md ./
+COPY sisifo ./sisifo
+RUN pip install --no-cache-dir --no-deps .
+
+# Create non-root user for analysis (no capture capabilities)
+RUN useradd --no-create-home --shell /bin/bash --uid 1000 sisifo \
+    && mkdir -p /data/network/captures /data/network/indexes /data/network/reports \
+    && chown -R sisifo:sisifo /data
+
+# Network analysis runs without root, without privileged, without host networking
+# No exposed ports - only local file analysis
+ENV SISIFO_DATA_DIR=/data PYTHONUNBUFFERED=1
+USER sisifo
+
+ENTRYPOINT ["sisifo"]
+CMD ["--help"]

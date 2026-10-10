@@ -10,6 +10,7 @@ from sisifo.cli.commands import (
     analyze,
     compare,
     import_nmap,
+    integration,
     network,
     osint,
     report,
@@ -25,11 +26,6 @@ from sisifo.cli.commands import (
 
 # core config functions
 from sisifo.core.config import (
-    NVIDIA_MODEL,
-    config_dir,
-    load_config,
-    nvidia_key,
-    save_config,
     set_web_password,
     web_password_configured,
 )
@@ -37,7 +33,7 @@ from sisifo.core.config import (
 console = Console(markup=False)
 
 app = typer.Typer(
-    help="Sísifo — containers, evidências e relatórios de segurança.",
+    help="Sísifo — evidências, OSINT e análise de segurança. Use sisifo help para exemplos.",
     no_args_is_help=False,
     invoke_without_command=True,
 )
@@ -55,6 +51,7 @@ app.add_typer(setup_web.app, name="setup-web")
 app.add_typer(osint.app, name="osint")
 app.add_typer(web.app, name="web")
 app.add_typer(vault.app, name="export-vault")
+app.add_typer(integration.app, name="integration")
 app.add_typer(network.app, name="network")
 
 
@@ -62,31 +59,8 @@ app.add_typer(network.app, name="network")
 @app.command()
 def setup():
     """Assistente interativo de configuração (IA e senha web)."""
-    previous = load_config()
-    provider = typer.prompt(
-        "Provedor (nvidia, ollama ou export)", default=previous.get("provider", "nvidia")
-    )
-    if provider not in {"nvidia", "ollama", "export"}:
-        raise typer.BadParameter("Escolha nvidia, ollama ou export.")
-    key = None
-    model = None
-    if provider == "nvidia":
-        console.print(
-            "NVIDIA: analyze enviará as evidências da sessão à API oficial. O vault não é enviado."
-        )
-        model = typer.prompt("Modelo", default=previous.get("model") or NVIDIA_MODEL)
-        try:
-            configured = bool(nvidia_key())
-        except ValueError:
-            configured = False
-        if not configured or typer.confirm("Substituir a chave NVIDIA já configurada?", default=False):
-            key = typer.prompt("Chave de API NVIDIA", hide_input=True, confirmation_prompt=True).strip()
-    elif provider == "ollama":
-        model = typer.prompt("Modelo Ollama instalado")
-    save_config(provider, model, key)
-    console.print(
-        f"Configuração salva em {config_dir()}. Chave não exibida nem incluída nos relatórios."
-    )
+    from sisifo.cli.commands.ai_console import configure
+    configure()
     if not web_password_configured() and sys.stdin.isatty():
         if typer.confirm("Deseja definir senha da interface web agora?"):
             pwd = typer.prompt("Nova senha", hide_input=True, confirmation_prompt=True)
@@ -98,7 +72,7 @@ def setup():
 def doctor(
     modules: str = typer.Option("nmap,nikto", help="Módulos a verificar (nmap,nikto,metasploit)"),
 ):
-    """Verifica Docker e imagens necessárias."""
+    """Verifica dados e Docker opcional; menu/web funcionam sem Docker."""
     import docker
 
     from sisifo.core import session as store
@@ -120,27 +94,39 @@ def doctor(
                 missing = True
         if missing:
             raise typer.Exit(1)
-    except docker.errors.DockerException as e:
-        console.print(f"Docker indisponível: {e}")
-        raise typer.Exit(1)
+    except docker.errors.DockerException:
+        console.print("Docker indisponível (opcional). Menu, configuração e web local continuam disponíveis.")
+        console.print("Inicie o Docker somente para executar módulos que usam containers.")
     finally:
         if client:
             client.close()
 
 
+@app.command()
+def repair(rollback: bool = typer.Option(False, "--rollback", help="Ativar a versão anterior instalada")):
+    """Repara launcher/PATH da instalação do usuário; não apaga dados."""
+    from sisifo.installation import repair as repair_installation
+    try:
+        repair_installation(rollback)
+    except (ValueError, OSError) as exc:
+        console.print(str(exc))
+        raise typer.Exit(1) from None
+
+
 @app.command(name="ai-status")
 def ai_status_cmd():
     """Mostrar configuração de IA sem exibir credenciais."""
-    config = load_config()
-    console.print(
-        f"Provedor: {config.get('provider', 'export')}; modelo: {config.get('model') or '-'}"
-    )
-    if config.get("provider") == "nvidia":
-        try:
-            nvidia_key()
-            console.print("Chave NVIDIA: configurada (não exibida).")
-        except Exception:
-            console.print("Chave NVIDIA: não configurada.")
+    from sisifo.core.ai_connection import public_status
+    state = public_status()
+    console.print(f"IA: {'configurada' if state['configured'] else 'desconectada'}; modelo: {state['model'] or '-'}")
+    console.print(f"API: {state['endpoint'] or '-'} (status local; sem consulta de conectividade)")
+
+
+@app.command(name="chat")
+def chat_cmd(session_id: str = typer.Option(None, "--session", help="Incluir prévia de uma sessão")):
+    """Conversar com a IA configurada sobre verificações e resultados."""
+    from sisifo.cli.commands.ai_console import converse
+    converse(session_id)
 
 
 @app.command()
@@ -164,6 +150,30 @@ def main(ctx: typer.Context):
             console.print(ctx.get_help())
             raise typer.Exit()
 
+
+
+
+
+@app.command("help")
+def help_cmd():
+    """Mostrar comandos e exemplos de uso, incluindo OSINT e IA."""
+    console.print("""Sísifo — comandos principais
+  sisifo menu                         Abrir menu
+  sisifo web                          Abrir interface web local
+  sisifo setup                        Configurar conexão de IA
+  sisifo chat                         Conversar com a IA
+  sisifo osint terminal               Terminal OSINT interativo
+  sisifo osint list                   Listar conectores
+  sisifo osint config hibp            Configurar chave HIBP (entrada oculta)
+  sisifo osint query hibp email usuario@exemplo.com
+                                      Consulta direta, sem abrir o assistente
+  sisifo osint --help                 Ajuda de OSINT
+  sisifo doctor                      Diagnóstico da instalação
+  sisifo network --help              Análise de rede
+  sisifo --help                      Todos os grupos de comandos
+No terminal OSINT: /ajuda, /voltar, /limpar, /sair.
+Resultados podem ser selecionados para análise pela IA, com prévia e confirmação separada.
+Consultas HIBP dependem da chave e do plano contratado; não há garantia de gratuidade.""")
 
 if __name__ == "__main__":
     app()

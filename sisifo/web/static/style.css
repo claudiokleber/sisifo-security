@@ -568,3 +568,35 @@ a { color: var(--text); text-decoration-color: var(--sisifo-red); text-underline
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* Assistant: a readable conversation with optional evidence and advanced analysis. */
+#ai-chat-form { display: grid; gap: 1rem; }
+#ai-chat-form label { display: block; font-weight: 500; }
+#ai-chat-form textarea, #chat-session {
+    width: 100%; padding: .8rem; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--input-bg); color: var(--text); font: inherit;
+}
+#ai-chat-form textarea { resize: vertical; min-height: 110px; }
+.ai-context { border: 1px solid var(--border); padding: .8rem; border-radius: 8px; }
+.ai-context[open] > * { margin-bottom: .75rem; }
+.ai-context summary, #tab-analyze > details > summary { cursor: pointer; font-weight: 600; }
+#tab-analyze > details[open] > summary { margin-bottom: 1.5rem; }
+.ai-connection-badge { color: var(--text-muted); font-size: .9rem; overflow-wrap: anywhere; }
+#chat-messages { max-height: 440px; overflow-y: auto; display: grid; gap: .8rem; }
+#chat-messages p { margin: 0; padding: 1rem; border: 1px solid var(--border); border-radius: 10px; overflow-wrap: anywhere; }
+#chat-messages .ai-message-user { margin-left: 8%; }
+#chat-messages .ai-message-assistant { margin-right: 8%; border-left: 3px solid var(--sisifo-red); }
+#chat-messages .ai-empty { color: var(--text-muted); border-style: dashed; }
+.ai-chat-actions { display: flex; gap: .75rem; flex-wrap: wrap; }
+#chat-status, #ai-connection-status { color: var(--text-muted); overflow-wrap: anywhere; }
+#chat-context { max-height: 240px; overflow: auto; white-space: pre-wrap; }
+
+.osint-steps { display:flex; flex-wrap:wrap; gap:1.5rem; padding:1rem 2rem; border:1px solid var(--border); border-radius:8px; margin-bottom:1rem; }
+#osint-status { margin-bottom:1rem; }
+.osint-ai-selection { display:grid; gap:.75rem; padding:1rem 0; }
+.osint-ai-selection label { display:flex; align-items:center; gap:.6rem; }
+.osint-ai-selection input[type=checkbox] { width:auto; }
+#osint-jobs pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:300px; overflow:auto; }
+#osint-jobs p { font-family:system-ui,sans-serif; white-space:pre-wrap; line-height:1.6; }
+#osint-jobs details { margin-top:1rem; }
+#tab-osint button:disabled { opacity:.5; cursor:not-allowed; }

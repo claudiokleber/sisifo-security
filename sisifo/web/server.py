@@ -19,22 +19,21 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse
 
 from sisifo.core import session as store
 from sisifo.core.ai_analyzer import analyze_session, prepare_batches
 from sisifo.core.config import (
-    load_config,
     load_service_config,
-    nvidia_key,
-    save_config,
     save_service_config,
     set_web_password,
     verify_web_password,
     web_password_configured,
 )
+from sisifo.core.integration import ExecutionRequest, IntegrationExecutionService
+from sisifo.core.integration_registry import create_catalog
 from sisifo.core.jobs import JobManager
 from sisifo.core.modules import registry
 from sisifo.core.report import build_report, compare_sessions
@@ -47,7 +46,8 @@ from sisifo.modules.network.models import (
 )
 from sisifo.osint import get_connector, list_connectors
 from sisifo.osint.contract import QueryType
-from sisifo.osint.executor import run_query
+from sisifo.osint.executor import OsintExecutionError, run_query
+from sisifo.osint.interaction import Proposals, ai_preview, interpret
 from sisifo.web.limits import RequestLimits
 from sisifo.web.security import (
     CSRF_COOKIE_NAME,
@@ -65,8 +65,11 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    app.state.osint_proposals = Proposals()
     app.state.jobs = JobManager(store.data_root(), workers=int(os.getenv("SISIFO_MAX_JOBS", "2")))
     try:
+        catalog = await run_in_threadpool(create_catalog)
+        app.state.integrations = IntegrationExecutionService(catalog, app.state.jobs, store.data_root() / "evidence")
         yield
     finally:
         await run_in_threadpool(app.state.jobs.close)
@@ -101,7 +104,7 @@ class AnalyzeRequest(BaseModel):
     session_id: str = Field(..., min_length=1)
     model: Optional[str] = None
     endpoint: Optional[str] = None
-    provider: Optional[Literal["nvidia", "ollama", "export"]] = None
+    provider: Optional[Literal["nvidia", "ollama", "export", "api"]] = None
     max_batches: int = Field(default=50, ge=1, le=100)
     max_seconds: int = Field(default=1800, ge=1, le=7200)
     token_budget: int = Field(default=250000, ge=1024, le=1000000)
@@ -120,8 +123,9 @@ class ImportNmapRequest(BaseModel):
 
 
 class OsintQueryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     connector_id: str = Field(..., min_length=1)
-    query: str = Field(..., min_length=1)
+    query: str = Field(..., min_length=1, max_length=2048)
     query_type: str = Field(..., min_length=1)
 
 
@@ -353,22 +357,94 @@ async def api_osint_connectors(_: str = Depends(require_session)):
     return {"connectors": result}
 
 
-@app.post("/api/osint/query")
-async def api_osint_query(body: OsintQueryRequest, request: Request, _: str = Depends(require_session), __: None = Depends(verify_csrf)):
+class OsintApproval(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    proposal_id: str = Field(min_length=1, max_length=100)
+    confirmed: Literal[True]
+
+
+class OsintSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    job_id: str = Field(pattern=r"^[a-f0-9]{32}$")
+    indices: list[int] = Field(min_length=1, max_length=20)
+
+
+def validate_osint(body):
+    connector = get_connector(body.connector_id)
+    qt = QueryType(body.query_type)
+    cfg = load_service_config(f"osint_{body.connector_id}")
+    if not connector.validate_config(cfg) or qt not in connector.meta.query_types or not connector.validate_query(body.query, qt):
+        raise ValueError("Conector, configuração ou consulta inválidos.")
+    return connector, qt, cfg
+
+
+@app.post("/api/osint/proposals")
+async def osint_proposal(body: OsintQueryRequest, request: Request, owner: str = Depends(require_session), _: None = Depends(verify_csrf)):
     try:
-        connector = get_connector(body.connector_id)
-        qt = QueryType(body.query_type)
-        cfg = load_service_config(f"osint_{body.connector_id}")
-        if not connector.validate_config(cfg) or qt not in connector.meta.query_types or not connector.validate_query(body.query, qt):
-            raise ValueError()
+        connector, _, _ = validate_osint(body)
+        token = request.app.state.osint_proposals.create(owner, "query", body.model_dump())
+        return {"proposal_id": token, **body.model_dump(), "destinations": connector.meta.allowed_destinations,
+                "cost": "Consulte o plano do serviço; custo não estimado.", "expires_in": 300}
     except (KeyError, ValueError):
-        raise HTTPException(status_code=400, detail="Conector, configuração ou consulta inválidos.") from None
-    def execute(control):
-        control.check()
-        result = run_query(connector, body.query, qt, cfg)
-        control.check()
-        return {"results": [r.model_dump() for r in result]}
-    return submit(request, "osint", body.model_dump(), execute)
+        raise HTTPException(400, "Conector, configuração ou consulta inválidos.") from None
+
+
+@app.post("/api/osint/query")
+async def api_osint_query(body: OsintApproval, request: Request, owner: str = Depends(require_session), _: None = Depends(verify_csrf)):
+    def enqueue(payload):
+        connector, qt, cfg = validate_osint(OsintQueryRequest(**payload))
+        def execute(control):
+            try:
+                result = run_query(connector, payload['query'], qt, cfg, control)
+                return {"results": [r.model_dump(mode="json") for r in result],
+                        "outcome": "RESULTS" if result else "NO_RESULTS",
+                        "limitations": ["Ausência de resultados não comprova ausência de exposição."]}
+            except OsintExecutionError as error:
+                return {"status": "failed", "error_code": error.code,
+                        "retry_after": error.details.get("retry_after"),
+                        "message": "Consulta não concluída. Confira configuração, limites e disponibilidade do serviço."}
+        return submit(request, "osint", payload, execute, seconds=60)
+    try:
+        return request.app.state.osint_proposals.execute(body.proposal_id, owner, "query", enqueue)
+    except (KeyError, ValueError) as error:
+        raise HTTPException(400, str(error)) from None
+
+
+@app.post("/api/osint/ai/preview")
+async def osint_ai_preview(body: OsintSelection, request: Request, owner: str = Depends(require_session), _: None = Depends(verify_csrf)):
+    try:
+        job = manager(request).get(body.job_id)
+        if job['type'] != 'osint' or job['status'] != 'completed':
+            raise ValueError('Selecione uma consulta OSINT concluída.')
+        preview = ai_preview(job['result'].get('results', []), body.indices)
+        from sisifo.core.ai_connection import public_status
+        status = public_status()
+        if not status.get('configured'):
+            raise ValueError('A IA ainda não está configurada. Abra Configurações → Conexão com a IA. Seus resultados continuam disponíveis.')
+        token = request.app.state.osint_proposals.create(owner, 'ai', {'preview': preview, 'connection': status})
+        return {'proposal_id': token, 'preview': preview, 'destination': status.get('endpoint', 'IA configurada')}
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from None
+
+
+@app.post("/api/osint/ai/interpret")
+async def osint_ai_interpret(body: OsintApproval, request: Request, owner: str = Depends(require_session), _: None = Depends(verify_csrf)):
+    def enqueue(payload):
+        from sisifo.core.ai_connection import public_status
+        if public_status() != payload['connection']:
+            raise ValueError('Conexão de IA alterada; gere uma nova prévia.')
+        def execute(control):
+            control.check()
+            if public_status() != payload['connection']:
+                raise ValueError('Conexão de IA alterada.')
+            answer = interpret(payload['preview'], control=control)
+            control.check()
+            return answer
+        return submit(request, 'osint-ai', payload, execute, seconds=120)
+    try:
+        return request.app.state.osint_proposals.execute(body.proposal_id, owner, 'ai', enqueue)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from None
 
 
 @app.get("/api/jobs")
@@ -393,19 +469,63 @@ async def api_cancel_job(job_id: str, request: Request, _: str = Depends(require
         raise HTTPException(status_code=404, detail="Job não encontrado") from None
 
 
-class AIConfigRequest(BaseModel):
-    provider: Literal["nvidia", "ollama", "export"]
-    model: str = Field(default="", max_length=200)
-    nvidia_key: Optional[str] = Field(default=None, max_length=512)
+class AIConnectionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    endpoint: str = Field(min_length=1, max_length=2048)
+    api_key: Optional[str] = Field(default=None, max_length=4096)
+
+
+class AIConfigRequest(AIConnectionRequest):
+    model: str = Field(min_length=1, max_length=256)
+
+
+@app.post("/api/ai/models")
+async def ai_models(body: AIConnectionRequest, _: str = Depends(require_session), __: None = Depends(verify_csrf)):
+    from sisifo.core.ai_connection import discover_models
+    try:
+        models = await run_in_threadpool(discover_models, body.endpoint, body.api_key)
+        return {"models": models, "note": "Catálogo obtido; teste o modelo para verificar acesso de inferência."}
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from None
+
+
+class OfflineAIRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    provider: Literal["export"]
 
 
 @app.post("/api/config/ai")
-async def api_save_ai(body: AIConfigRequest, _: str = Depends(require_session), __: None = Depends(verify_csrf)):
+async def api_save_ai(body: AIConfigRequest | OfflineAIRequest, _: str = Depends(require_session), __: None = Depends(verify_csrf)):
+    from sisifo.core.ai_connection import connect
+    if isinstance(body, OfflineAIRequest):
+        from sisifo.core.config import save_config
+        save_config("export", "")
+        return {"configured": False}
     try:
-        await run_in_threadpool(save_config, body.provider, body.model, body.nvidia_key or None)
-        return {"saved": True}
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Configuração inválida.") from None
+        return await run_in_threadpool(connect, body.endpoint, body.model, body.api_key)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from None
+
+
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=8000)
+
+
+class ChatRequest(BaseModel):
+    messages: list[ChatMessage] = Field(min_length=1, max_length=40)
+    session_id: Optional[str] = Field(default=None, pattern=r"^[a-f0-9]{32}$")
+    include_evidence: bool = False
+
+
+@app.post("/api/ai/chat")
+async def ai_chat(body: ChatRequest, _: str = Depends(require_session), __: None = Depends(verify_csrf)):
+    from sisifo.core.ai_connection import chat
+    try:
+        return await run_in_threadpool(chat, [m.model_dump() for m in body.messages],
+                                      body.session_id, body.include_evidence)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from None
 
 
 class PasswordRequest(BaseModel):
@@ -635,6 +755,10 @@ async def api_network_packet_detail(capture_id: str, packet_number: int, _: str 
             "info": detail.info,
             "layers": detail.layers,
             "hex_dump": detail.hex_dump,
+            "original_length": detail.original_length,
+            "captured_length": detail.captured_length,
+            "extracted_length": detail.extracted_length,
+            "hex_dump_error": detail.hex_dump_error,
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
@@ -883,23 +1007,12 @@ async def api_modules(_: str = Depends(require_session)):
 
 @app.get("/api/config/status")
 async def api_config_status(_: str = Depends(require_session)):
-    config = load_config()
     osint_configs = {}
     for connector_id in list_connectors().keys():
         osint_configs[connector_id] = bool(get_connector(connector_id).validate_config(load_service_config(f"osint_{connector_id}")))
-    configured = bool(config.get("model")) and config.get("provider") == "ollama"
-    if config.get("provider") == "nvidia":
-        try:
-            nvidia_key()
-            configured = bool(config.get("model"))
-        except ValueError:
-            pass
+    from sisifo.core.ai_connection import public_status
     return {
-        "ai": {
-            "provider": config.get("provider"),
-            "model": config.get("model"),
-            "configured": configured,
-        },
+        "ai": public_status(),
         "osint": osint_configs,
         "web_password_configured": web_password_configured(),
     }
@@ -935,3 +1048,69 @@ async def api_download(session_id: str, file_type: str, _: str = Depends(require
     else:
         raise HTTPException(status_code=400, detail="Tipo de arquivo inválido")
     return FileResponse(path, filename=path.name)
+
+
+@app.get("/api/integration/catalog")
+async def integration_catalog(request: Request, status: Optional[str] = None,
+                              category: Optional[str] = None, _: str = Depends(require_session)):
+    from sisifo.core.integration import IntegrationCategory, IntegrationStatus
+    try:
+        items = request.app.state.integrations.catalog.list(
+            IntegrationStatus(status) if status else None,
+            IntegrationCategory(category) if category else None)
+    except ValueError:
+        raise HTTPException(400, "Filtro inválido") from None
+    return {"integrations": [item.model_dump(mode="json") for item in items]}
+
+
+@app.get("/api/integration/catalog/{integration_id}")
+async def integration_detail(integration_id: str, request: Request, _: str = Depends(require_session)):
+    meta = request.app.state.integrations.catalog.get(integration_id)
+    if not meta:
+        raise HTTPException(404, "Integração não encontrada")
+    return meta.model_dump(mode="json")
+
+
+@app.get("/api/integration/catalog/{integration_id}/capabilities")
+async def integration_capabilities(integration_id: str, request: Request, _: str = Depends(require_session)):
+    meta = request.app.state.integrations.catalog.get(integration_id)
+    if not meta:
+        raise HTTPException(404, "Integração não encontrada")
+    return {"capabilities": [c.model_dump(mode="json") for c in meta.capabilities]}
+
+
+@app.post("/api/integration/execute", status_code=202)
+async def integration_execute(body: ExecutionRequest, request: Request,
+                              _: str = Depends(require_session), __: None = Depends(verify_csrf)):
+    service = request.app.state.integrations
+    try:
+        job_id = await run_in_threadpool(service.submit, body)
+        return {"job_id": job_id}
+    except ValueError as error:
+        # Executor validation errors are controlled messages, never raw input or secrets.
+        message = str(error)
+        code = 409 if "idempotência" in message else 400
+        raise HTTPException(code, message) from None
+
+
+@app.get("/api/integration/jobs")
+async def integration_jobs(request: Request, limit: int = Query(100, ge=1, le=100),
+                           _: str = Depends(require_session)):
+    return {"jobs": request.app.state.integrations.list_jobs(limit)}
+
+
+@app.get("/api/integration/jobs/{job_id}")
+async def integration_job(job_id: str, request: Request, _: str = Depends(require_session)):
+    try:
+        return request.app.state.integrations.get_job(job_id)
+    except ValueError:
+        raise HTTPException(404, "Job de integração não encontrado") from None
+
+
+@app.post("/api/integration/jobs/{job_id}/cancel")
+async def integration_cancel(job_id: str, request: Request, _: str = Depends(require_session),
+                             __: None = Depends(verify_csrf)):
+    try:
+        return request.app.state.integrations.cancel(job_id)
+    except ValueError:
+        raise HTTPException(404, "Job de integração não encontrado") from None

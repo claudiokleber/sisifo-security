@@ -30,7 +30,7 @@ class Step(BaseModel):
     session_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
     target: str | None = Field(default=None, max_length=253)
     modules: str = "nmap"
-    provider: Literal["export", "ollama", "nvidia"] = "export"
+    provider: Literal["export", "ollama", "nvidia", "api"] = "export"
     model: str | None = Field(default=None, max_length=200)
     connector: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_-]{0,63}$")
     query_type: Literal["domain", "ip", "url", "hash"] = "domain"
