@@ -67,7 +67,7 @@ class JobManager:
                     if old["digest"] != digest:
                         raise ValueError("Chave de idempotência reutilizada com dados diferentes.")
                     return old["id"]
-                if old["digest"] == digest and old["status"] in ACTIVE:
+                if not key_hash and old["digest"] == digest and old["status"] in ACTIVE:
                     return old["id"]
             if sum(j["status"] in ACTIVE for j in self._jobs.values()) >= self.max_pending:
                 raise ValueError("Fila cheia; aguarde a conclusão dos jobs.")
@@ -97,6 +97,7 @@ class JobManager:
                 self._save(job)
             result = function(control)
             with self._lock:
+                control.check()
                 job["result"] = redact(result)[0]
                 state = result.get("status", "completed") if isinstance(result, dict) else "completed"
                 job["status"] = state if state in {"partial", "failed", "cancelled", "interrupted"} else "completed"

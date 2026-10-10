@@ -17,7 +17,7 @@ def analyze(
     session_id: str = typer.Argument(..., help="ID da sessão"),
     model: str = typer.Option(None, "--model", help="Modelo a utilizar"),
     endpoint: str = typer.Option(None, "--endpoint", help="Endpoint do provedor"),
-    provider: str = typer.Option(None, "--provider", help="Provedor (nvidia, ollama, export)"),
+    provider: str = typer.Option(None, "--provider", help="Modo: api ou export; omitido usa a conexão configurada"),
     max_batches: int = typer.Option(50, "--max-batches", help="Máximo de lotes"),
     max_seconds: int = typer.Option(1800, min=1, max=86400),
     token_budget: int = typer.Option(250000, min=1024, max=10000000),

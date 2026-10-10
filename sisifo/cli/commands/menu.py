@@ -28,8 +28,6 @@ from sisifo.core.config import (
 from sisifo.core.modules import registry
 from sisifo.core.orchestrator import scan as execute_scan
 from sisifo.core.report import build_report, compare_sessions
-from sisifo.osint import get_connector, list_connectors
-from sisifo.osint.executor import run_query
 
 console = Console()
 
@@ -190,21 +188,28 @@ def _submenu_relatorios():
 
 def _submenu_ia():
     ui.section("Análise com IA")
+    from sisifo.core.ai_connection import public_status
+    state = public_status()
+    console.print(f"Modelo: {state['model'] or 'não configurado'}")
+    choice = Prompt.ask("[1] Conversar [2] Analisar sessão [3] Conectar IA [0] Voltar",
+                        choices=["0", "1", "2", "3"], default="1")
+    if choice == "0":
+        return
+    if choice == "3":
+        from sisifo.cli.commands.ai_console import configure
+        configure()
+        return
+    if choice == "1":
+        from sisifo.cli.commands.ai_console import converse
+        session = select_session() if typer.confirm("Incluir evidências de uma sessão?", default=False) else None
+        converse(session)
+        return
     cfg = load_config()
-    console.print(f"Provedor: {cfg.get('provider','export')}")
-    console.print(f"Modelo: {cfg.get('model') or '-'}")
-    if cfg.get("provider") == "nvidia":
-        from sisifo.core.config import nvidia_key
-        try:
-            nvidia_key()
-            console.print("Chave NVIDIA: configurada; conectividade não verificada")
-        except ValueError:
-            console.print("Chave NVIDIA: não configurada")
 
     sess_id = select_session()
     if not sess_id:
         return
-    provider = Prompt.ask("Provedor", default=cfg.get("provider","export"), choices=["nvidia","ollama","export"])
+    provider = cfg.get("provider", "export")
     model = Prompt.ask("Modelo (opcional)", default=cfg.get("model") or "")
     max_batches = IntPrompt.ask("Máx. lotes", default=50)
 
@@ -224,48 +229,9 @@ def _submenu_ia():
         console.print(f"Plano salvo. Revise: sisifo agent show {plan_id}; execute: sisifo agent run {plan_id}")
 
 def _submenu_osint():
-    ui.section("OSINT")
-    conns = list_connectors()
-    if not conns:
-        console.print("Nenhum conector disponível.")
-        return
-    table = Table(box=box.SIMPLE)
-    table.add_column("#", style="white")
-    table.add_column("ID")
-    table.add_column("Nome")
-    table.add_column("Status")
-    for i, (cid, meta) in enumerate(conns.items(), 1):
-        table.add_row(str(i), cid, meta["name"], meta.get("status","?"))
-    console.print(table)
+    from sisifo.cli.commands.osint import terminal_cmd
+    terminal_cmd()
 
-    choice = IntPrompt.ask("Selecionar conector (0 = voltar)", default=0)
-    if choice == 0:
-        return
-    if not 1 <= choice <= len(conns):
-        ui.warn("Seleção inválida.")
-        return
-    cid = list(conns.keys())[choice - 1]
-    conn = get_connector(cid)
-
-    qtype = Prompt.ask("Tipo de consulta", choices=[qt.value for qt in conn.meta.query_types])
-    query = Prompt.ask("Valor da consulta")
-    from sisifo.osint.contract import QueryType
-    qt = QueryType(qtype)
-
-    cfg = {}
-    cfg_file = config_dir() / f"osint_{cid}.json"
-    if cfg_file.exists():
-        import json
-        cfg = json.loads(cfg_file.read_text())
-
-    if not conn.validate_config(cfg):
-        console.print("Conector não configurado. Use 'Configurações' para definir credenciais.")
-        return
-
-    console.print(Panel(f"Conector: {cid}\nTipo: {qtype}\nConsulta: {query}", title="Confirmação"))
-    if not typer.confirm("Executar?"):
-        return
-    _run_and_show(run_query, conn, query, qt, cfg)
 
 def _submenu_web():
     ui.section("Interface web")
@@ -363,7 +329,7 @@ def menu() -> None:
         _print_banner(ver)
 
         cfg = load_config()
-        ai_status = cfg.get("provider", "export")
+        ai_status = "conectada" if cfg.get("provider", "export") != "export" else "offline"
         web_status = "em execução" if existing_web(8000) else "não identificada na porta 8000"
         data_dir = str(store.data_root())
         mode = "Docker" if os.getenv("SISIFO_DATA_DIR") == "/data" else "Nativo"
@@ -413,16 +379,19 @@ Comandos principais (disponíveis após instalação no PATH):
   sisifo doctor                Verifica Docker e imagens
   sisifo session list          Lista sessões
   sisifo modules               Lista módulos registrados
-  sisifo setup                 Configura IA (NVIDIA/Ollama/export)
+  sisifo setup                 Conecta API e seleciona modelo
   sisifo setup-web             Define senha da interface web
   sisifo web                   Inicia a UI web local
+  sisifo osint terminal        Terminal OSINT com interpretação opcional pela IA
   sisifo osint list            Lista conectores OSINT
+  sisifo osint config hibp     Configura a chave HIBP
+  sisifo help                  Exemplos e ajuda geral
 
 Exemplos de uso:
 
   sisifo scan <ALVO_AUTORIZADO> --modules nmap --project lab
   sisifo report <SESSION_ID>
-  sisifo analyze <SESSION_ID> --provider nvidia --max-batches 30
+  sisifo chat --session <SESSION_ID>
   sisifo osint query dummy domain example.com
 
 Para mais detalhes use:  sisifo <comando> --help

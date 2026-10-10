@@ -14,6 +14,7 @@ from sisifo.osint.contract import (
 
 class DummyConnector(BaseConnector):
     simulated = True
+    ai_evidence_fields = frozenset({'simulated', 'query_type', 'domain', 'ip'})
     meta = ConnectorMeta(
         id="dummy",
         name="Dummy Connector",
@@ -58,7 +59,7 @@ class DummyConnector(BaseConnector):
             )
         ]
 
-    def normalize(self, raw: Any) -> List[ConnectorResult]:
+    def normalize(self, raw: Any, original_query: str = "") -> List[ConnectorResult]:
         # For dummy, raw is already ConnectorResult list
         if isinstance(raw, list):
             return raw

@@ -39,7 +39,7 @@ def load_config() -> Dict[str, Any]:
         result = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(result, dict):
             raise ValueError
-        if result.get("provider") not in {"nvidia", "ollama", "export"}:
+        if result.get("provider") not in {"nvidia", "ollama", "export", "api"}:
             raise ValueError
         if result["provider"] != "export" and not isinstance(result.get("model"), str):
             raise ValueError
@@ -81,7 +81,7 @@ def private_directory(path: Path) -> None:
 
 
 def save_config(provider: str, model: str, api_key: Optional[str] = None) -> None:
-    if provider not in {"nvidia", "ollama", "export"}:
+    if provider not in {"nvidia", "ollama", "export", "api"}:
         raise ValueError("Provedor inválido.")
     if provider != "export" and (not isinstance(model, str) or not model.strip()):
         raise ValueError("Modelo não pode estar vazio.")

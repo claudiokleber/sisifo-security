@@ -54,6 +54,12 @@ class SisifoApp {
 
         // OSINT
         document.getElementById('osint-query-form')?.addEventListener('submit', (e) => this.submitOsintQuery(e));
+        document.getElementById('osint-connector')?.addEventListener('change', (e) => this.updateOsintQueryTypeOptions(e));
+        document.getElementById('osint-analyze-objective')?.addEventListener('click', () => this.analyzeOsintObjective());
+        document.getElementById('osint-confirm-proposal')?.addEventListener('click', () => this.executeOsintProposal());
+        document.getElementById('osint-reject-proposal')?.addEventListener('click', () => this.hideOsintProposal());
+        document.getElementById('osint-execute-preview')?.addEventListener('click', () => this.executeOsintPreview());
+        document.getElementById('osint-cancel-preview')?.addEventListener('click', () => this.hideOsintPreview());
 
         // Config forms
         document.getElementById('config-ai-form')?.addEventListener('submit', (e) => this.saveAiConfig(e));
@@ -148,7 +154,7 @@ class SisifoApp {
         const osint = config.osint;
         container.innerHTML = `
             <div class="list-item">
-                <div class="label">IA (${ai.provider || 'não configurado'})</div>
+                <div class="label">IA (${ai.configured ? 'configurada' : 'não configurada'})</div>
                 <div class="value">${ai.configured ? '<span class="status status-completed">Configurado</span>' : '<span class="status status-pending">Não configurado</span>'}</div>
             </div>
             ${Object.entries(osint).map(([id, configured]) => `
@@ -416,57 +422,319 @@ class SisifoApp {
     async loadOsintConnectors() {
         try {
             const data = await this.api('/api/osint/connectors');
+            this.osintConnectorsData = data.connectors;
             const select = document.getElementById('osint-connector');
-            select.innerHTML = Object.entries(data.connectors).map(([id, meta]) => `
-                <option value="${this.escapeHtml(id)}" ${!meta.configured || meta.status === 'planned' ? 'disabled' : ''}>
-                    ${this.escapeHtml(meta.name)} (${meta.configured ? 'configurado' : 'configure na aba Configurações'}; ${this.escapeHtml(meta.status)})
-                </option>
-            `).join('');
-
-            const container = document.getElementById('osint-connectors');
-            container.innerHTML = Object.entries(data.connectors).map(([id, meta]) => `
-                <div class="osint-connector">
-                    <h4>${this.escapeHtml(meta.name)} <span class="status status-${meta.status}">${meta.status}</span></h4>
-                    <div class="meta">
-                        ${this.escapeHtml(meta.description)}<br>
-                        Configuração: ${meta.configured ? 'pronta' : 'necessária na aba Configurações'}<br>
-                        Tipos: ${this.escapeHtml(meta.query_types.join(', '))}<br>
-                        Limites: ${this.escapeHtml(JSON.stringify(meta.limits))}
-                    </div>
-                </div>
-            `).join('');
+            const previous = select.value;
+            select.replaceChildren();
+            const container = document.getElementById('osint-connectors'); container.replaceChildren();
+            let ready = 0;
+            for (const [id, meta] of Object.entries(data.connectors)) {
+                const usable = meta.configured && meta.status !== 'planned';
+                if (usable) ready++;
+                const option = document.createElement('option'); option.value = id;
+                option.disabled = !usable;
+                option.textContent = `${meta.name} — ${id === 'dummy' ? 'demonstração' : usable ? 'pronto para consultar' : 'configuração necessária'}`;
+                select.appendChild(option);
+                const card = document.createElement('div'); card.className = 'osint-connector';
+                const title = document.createElement('h4'); title.textContent = meta.name;
+                const description = document.createElement('p');
+                description.textContent = id === 'hibp' ? 'Verifica se um e-mail aparece em vazamentos conhecidos. Requer chave e plano compatível no HIBP.' : meta.description;
+                const state = document.createElement('p'); state.textContent = usable ? 'Configuração salva. A consulta verificará o acesso ao serviço.' : 'Antes de começar, informe a chave de acesso deste serviço.';
+                const configure = document.createElement('button'); configure.type = 'button'; configure.className = 'btn btn-secondary';
+                configure.textContent = `${usable ? 'Editar configuração' : 'Configurar'} — ${meta.name}`;
+                configure.addEventListener('click', () => this.configureOsintConnector(id));
+                card.append(title, description, state, configure); container.appendChild(card);
+            }
+            if (data.connectors[previous]?.configured) select.value = previous;
+            if (!ready) { const empty = document.createElement('option'); empty.textContent = 'Configure um serviço abaixo para começar'; empty.value = ''; select.prepend(empty); select.value = ''; }
+            document.querySelector('#osint-query-form [type=submit]').disabled = !ready;
+            document.getElementById('osint-status').textContent = ready ? 'Escolha um serviço e preencha a consulta. Nenhum dado será enviado sem sua confirmação.' : 'Ainda não há um serviço pronto. Use o botão Configurar nos cartões abaixo.';
+            this.updateOsintQueryTypeOptions({target: select});
         } catch (err) {
-            console.error('Failed to load OSINT connectors:', err);
+            this.showToast('Não foi possível carregar os serviços. Atualize a página e tente novamente.', 'error');
         }
     }
 
     async submitOsintQuery(e) {
         e.preventDefault();
-        const form = e.target;
-        const formData = new FormData(form);
+        const data = new FormData(e.target);
+        await this.submitOsintQueryDirect(data.get('connector_id'), data.get('query'), data.get('query_type'));
+    }
 
-        if (!window.confirm('Autorizar esta consulta ao conector selecionado?')) return;
+    // --- OSINT Interactive Methods ---
+
+    updateOsintQueryTypeOptions(e) {
+        const connectorId = e.target.value;
+        const queryTypeSelect = document.getElementById('osint-query-type');
+        const hintEl = document.getElementById('osint-query-hint');
+        const helpEl = document.getElementById('osint-connector-help');
+        
+        if (!connectorId || !this.osintConnectorsData) {
+            queryTypeSelect.innerHTML = '<option value="">Selecione um conector primeiro</option>';
+            if (hintEl) hintEl.textContent = '';
+            if (helpEl) helpEl.textContent = '';
+            return;
+        }
+
+        const meta = this.osintConnectorsData[connectorId];
+        if (!meta) return;
+
+        const queryTypes = meta.query_types || [];
+        queryTypeSelect.innerHTML = queryTypes.map(qt => `<option value="${qt}">${qt}</option>`).join('');
+
+        // Update hints based on query type
+        const hints = {
+            'email': 'ex.: usuario@dominio.com',
+            'domain': 'ex.: exemplo.com',
+            'ip': 'ex.: 192.168.1.1 ou 2001:db8::1',
+            'url': 'ex.: https://exemplo.com/path',
+            'hash': 'ex.: hash MD5/SHA1/SHA256 (32/40/64 chars hex)',
+        };
+        const firstType = queryTypes[0];
+        if (hintEl) hintEl.textContent = hints[firstType] || '';
+
+        if (helpEl) {
+            helpEl.textContent = `Tipos suportados: ${queryTypes.join(', ')} | ${meta.configured ? 'Configurado' : 'Configure na aba Configurações'}`;
+        }
+
+        // Show preview section
+        this.hideOsintPreview();
+        const input = document.getElementById('osint-query');
+        input.type = firstType === 'email' ? 'email' : 'text';
+        input.placeholder = hints[firstType] || 'Informe o valor da consulta';
+    }
+
+    showOsintPreview(connectorId, queryType) {
+        const previewEl = document.getElementById('osint-preview');
+        const detailsEl = document.getElementById('osint-preview-details');
+        const connector = this.osintConnectorsData?.[connectorId];
+        if (!connector || !previewEl || !detailsEl) return;
+
+        detailsEl.innerHTML = `
+            <p><strong>Serviço:</strong> ${this.escapeHtml(connector.name)}</p>
+            <p><strong>Tipo de consulta:</strong> ${queryType}</p>
+            <p><strong>Endpoint:</strong> ${connector.allowed_destinations?.join(', ') || 'N/A'}</p>
+            <p><strong>Credencial:</strong> ${connector.configured ? 'Configurada' : '<span class="warning">Não configurada - configure na aba Configurações</span>'}</p>
+            <p><strong>Rate limit local:</strong> ${connector.limits?.rate_per_minute || 'N/A'} req/min</p>
+            <p class="dim">A consulta será enviada ao serviço externo acima. Nenhum dado sensível além do valor da consulta é transmitido.</p>
+        `;
+        previewEl.classList.remove('hidden');
+    }
+
+    hideOsintPreview() {
+        document.getElementById('osint-preview')?.classList.add('hidden');
+    }
+
+    async executeOsintPreview() {
+        const connectorId = document.getElementById('osint-connector').value;
+        const queryType = document.getElementById('osint-query-type').value;
+        const query = document.getElementById('osint-query').value;
+        
+        if (!connectorId || !queryType || !query) {
+            this.showToast('Preencha todos os campos', 'warning');
+            return;
+        }
+
+        this.hideOsintPreview();
+        await this.submitOsintQueryDirect(connectorId, query, queryType);
+    }
+
+    async submitOsintQueryDirect(connectorId, query, queryType) {
+        if (this.osintSubmitting) return;
+        this.osintSubmitting = true;
         try {
-            const result = await this.api('/api/osint/query', {
-                method: 'POST',
-                body: JSON.stringify({
-                    connector_id: formData.get('connector_id'),
-                    query: formData.get('query'),
-                    query_type: formData.get('query_type')
-                })
-            });
+            const proposal = await this.api('/api/osint/proposals', {method: 'POST', body: JSON.stringify({
+                connector_id: connectorId, query, query_type: queryType
+            })});
+            if (!window.confirm(`Autorizar envio ao serviço OSINT?\nServiço: ${proposal.connector_id}\nDestino: ${proposal.destinations.join(', ')}\nTipo: ${proposal.query_type}\nConsulta: ${proposal.query}\n${proposal.cost}`)) return;
+            const result = await this.api('/api/osint/query', {method: 'POST', body: JSON.stringify({
+                proposal_id: proposal.proposal_id, confirmed: true
+            })});
             this.showToast('Consulta OSINT iniciada', 'success');
             this.trackJob(result.job_id, 'osint');
         } catch (err) {
             this.showToast('Erro na consulta OSINT: ' + err.message, 'error');
+        } finally { this.osintSubmitting = false; }
+    }
+
+    async analyzeOsintObjective() {
+        const objective = document.getElementById('osint-objective').value.trim();
+        if (!objective) {
+            this.showToast('Descreva o objetivo da investigação', 'warning');
+            return;
         }
+
+        this.hideOsintProposal();
+        const btn = document.getElementById('osint-analyze-objective');
+        btn.disabled = true;
+        btn.textContent = 'Analisando...';
+
+        try {
+            // Check if AI is configured
+            const config = await this.api('/api/config/status');
+            
+            if (config.ai.configured && window.confirm(`Enviar o objetivo abaixo à IA configurada? Isso pode incluir o e-mail digitado e é separado da consulta HIBP.\n${objective}\nCancelar usa análise local.`)) {
+                // Use AI to analyze objective and propose query
+                await this.analyzeObjectiveWithAI(objective);
+            } else {
+                // Fallback: simple keyword matching for HIBP
+                this.analyzeObjectiveLocally(objective);
+            }
+        } catch (err) {
+            this.showToast('Erro ao analisar objetivo: ' + err.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Analisar objetivo';
+        }
+    }
+
+    analyzeObjectiveLocally(objective) {
+        const lower = objective.toLowerCase();
+        const proposalEl = document.getElementById('osint-proposal');
+        const detailsEl = document.getElementById('osint-proposal-details');
+
+        // Simple keyword matching
+        let proposedConnector = null;
+        let proposedType = 'email';
+        let proposedQuery = '';
+        let reasoning = '';
+
+        if (lower.includes('e-mail') || lower.includes('email') || lower.includes('vazamento') || lower.includes('vazou') || lower.includes('pwned') || lower.includes('breach') || lower.includes('violação')) {
+            proposedConnector = 'hibp';
+            proposedType = 'email';
+            reasoning = 'O objetivo menciona verificação de e-mail em vazamentos/violações. O HIBP (Have I Been Pwned) é o serviço adequado para consultar o endpoint breachedaccount.';
+        }
+
+        if (!proposedConnector) {
+            detailsEl.innerHTML = '<p class="warning">Não foi possível identificar uma consulta. Descreva a verificação de um e-mail ou use o formulário guiado.</p>';
+            proposalEl.classList.remove('hidden');
+            return;
+        }
+
+        // Extract potential email from objective
+        const emailMatch = objective.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+        if (emailMatch) {
+            proposedQuery = emailMatch[0];
+        }
+
+        this.renderOsintProposal(proposedConnector, proposedType, proposedQuery, reasoning);
+    }
+
+    renderOsintProposal(connectorId, queryType, query, reasoning) {
+        const connector = this.osintConnectorsData?.[connectorId];
+        if (!connector?.query_types?.includes(queryType) || typeof query !== 'string') return;
+        const details = document.getElementById('osint-proposal-details');
+        details.replaceChildren();
+        for (const text of [
+            `Serviço: ${connector.name}`, `Tipo: ${queryType}`, `Consulta: ${query || '(preencha o valor no formulário)'}`,
+            `Justificativa: ${reasoning}`, `Destino: ${(connector.allowed_destinations || []).join(', ')}`,
+            'Custo: consulte o plano do serviço; custo não estimado.',
+            'A confirmação final será solicitada com os dados validados pelo servidor.'
+        ]) {
+            const p = document.createElement('p'); p.textContent = text; details.appendChild(p);
+        }
+        this.currentOsintProposal = {connectorId, queryType, query};
+        document.getElementById('osint-proposal').classList.remove('hidden');
+    }
+
+    async analyzeObjectiveWithAI(objective) {
+        try {
+            // Use the existing AI chat endpoint to analyze the objective
+            const response = await this.api('/api/ai/chat', {
+                method: 'POST',
+                body: JSON.stringify({
+                    messages: [
+                        {
+                            role: 'user',
+                            content: `Analise este objetivo de investigação OSINT e proponha uma consulta estruturada:
+
+Objetivo: "${objective}"
+
+Conectores OSINT disponíveis:
+${Object.entries(this.osintConnectorsData || {}).map(([id, meta]) => `- ${id}: ${meta.name} (tipos: ${meta.query_types?.join(', ') || 'N/A'}, configurado: ${meta.configured ? 'sim' : 'não'})`).join('\n')}
+
+Responda APENAS com JSON no formato:
+{
+  "connector_id": "id_do_conector",
+  "query_type": "tipo_da_consulta",
+  "query": "valor_sugerido_ou_vazio",
+  "reasoning": "justificativa_curta",
+  "estimated_cost": "gratuito|pode_consumir_creditos|desconhecido"
+}
+
+Não inclua texto adicional.`
+                        }
+                    ],
+                    include_evidence: false
+                })
+            });
+
+            // Parse AI response
+            let proposal;
+            try {
+                const content = response.message?.content || response.content || '';
+                const jsonMatch = content.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    proposal = JSON.parse(jsonMatch[0]);
+                } else {
+                    throw new Error('JSON não encontrado na resposta');
+                }
+            } catch (e) {
+                console.error('Failed to parse AI proposal:', e);
+                // Fallback to local analysis
+                this.analyzeObjectiveLocally(objective);
+                return;
+            }
+
+            // Validate proposal
+            if (!proposal.connector_id || !this.osintConnectorsData?.[proposal.connector_id]) {
+                this.analyzeObjectiveLocally(objective);
+                return;
+            }
+
+            const connector = this.osintConnectorsData[proposal.connector_id];
+            if (!connector.query_types?.includes(proposal.query_type)) {
+                this.analyzeObjectiveLocally(objective);
+                return;
+            }
+
+            if (typeof proposal.query !== 'string' || typeof proposal.reasoning !== 'string') {
+                this.analyzeObjectiveLocally(objective); return;
+            }
+            this.renderOsintProposal(proposal.connector_id, proposal.query_type, proposal.query, proposal.reasoning);
+
+        } catch (err) {
+            console.error('AI analysis failed:', err);
+            this.analyzeObjectiveLocally(objective);
+        }
+    }
+
+    hideOsintProposal() {
+        document.getElementById('osint-proposal')?.classList.add('hidden');
+        this.currentOsintProposal = null;
+    }
+
+    executeOsintProposal() {
+        const proposal = this.currentOsintProposal;
+        if (!proposal) return;
+
+        const query = proposal.query || document.getElementById('osint-query').value;
+        if (!query) {
+            this.showToast('Informe o valor da consulta', 'warning');
+            return;
+        }
+
+        this.hideOsintProposal();
+        this.submitOsintQueryDirect(proposal.connectorId, query, proposal.queryType);
     }
 
     async loadConfigStatus() {
         try {
             const config = await this.api('/api/config/status');
-            document.getElementById('config-provider').value = config.ai.provider || 'nvidia';
+            document.getElementById('config-endpoint').value = config.ai.endpoint || '';
+            document.getElementById('ai-connection-status').textContent = config.ai.configured ? 'Conexão salva. Use o teste para verificar disponibilidade atual.' : 'Conecte uma API para começar.';
             document.getElementById('config-model').value = config.ai.model || '';
+            document.getElementById('chat-connection').textContent = config.ai.configured ? 'Modelo: ' + config.ai.model + ' · ' + config.ai.endpoint : 'IA desconectada. Abra Configurações para conectar sua API.';
 
             const container = document.getElementById('osint-credentials');
             container.innerHTML = Object.entries(config.osint).map(([id, configured]) => `
@@ -485,17 +753,20 @@ class SisifoApp {
     async saveAiConfig(e) {
         e.preventDefault();
         const form = e.target;
-        const formData = new FormData(form);
-
+        const button = form.querySelector('[type=submit]');
+        button.disabled = true;
         try {
-            await this.api('/api/config/ai', {method: 'POST', body: JSON.stringify({
-                provider: formData.get('provider'), model: formData.get('model'),
-                nvidia_key: formData.get('nvidia_key') || null
+            const result = await this.api('/api/config/ai', {method: 'POST', body: JSON.stringify({
+                endpoint: form.elements.endpoint.value, model: form.elements.model.value,
+                api_key: form.elements.api_key.value || null
             })});
-            form.querySelector('[name=nvidia_key]').value = '';
-            this.showToast('Configuracao salva', 'success');
-            await this.loadConfigStatus();
-        } catch (err) { this.showToast(err.message, 'error'); }
+            form.elements.api_key.value = '';
+            document.getElementById('ai-connection-status').textContent = 'Conexão testada com o modelo ' + result.model;
+            this.showToast('Conexão testada e salva', 'success');
+            document.getElementById('chat-connection').textContent = 'Modelo: ' + result.model + ' · ' + result.endpoint;
+        } catch (err) {
+            document.getElementById('ai-connection-status').textContent = err.message;
+        } finally { button.disabled = false; }
     }
 
     async saveWebPassword(e) {
@@ -639,18 +910,49 @@ class SisifoApp {
         }
     }
 
-    async loadNetworkPackets(captureId) {
+    async loadNetworkPackets(captureId, options = {}) {
+        const { displayFilter = '', offset = 0, limit = 100 } = options;
+        // Store state for this capture
+        this.networkState = this.networkState || {};
+        this.networkState[captureId] = this.networkState[captureId] || { displayFilter: '', offset: 0, limit: 100 };
+        this.networkState[captureId].displayFilter = displayFilter;
+        this.networkState[captureId].offset = offset;
+        this.networkState[captureId].limit = limit;
+
         try {
             const result = await this.api(`/api/network/captures/${captureId}/packets`, {
                 method: 'POST',
-                body: JSON.stringify({display_filter: '', offset: 0, limit: 100})
+                body: JSON.stringify({ display_filter: displayFilter, offset, limit })
             });
             const panel = document.getElementById('network-capture-detail');
             panel.classList.remove('hidden');
+            const totalFiltered = result.total_filtered !== undefined ? result.total_filtered : result.packets.length;
+            const hasMore = result.has_more !== undefined ? result.has_more : (offset + result.packets.length < totalFiltered);
+            
             panel.innerHTML = `
                 <h3>Pacotes da Captura: ${this.escapeHtml(captureId)}</h3>
+                <div class="filter-bar">
+                    <div class="filter-input-group">
+                        <label for="packet-display-filter">Filtro de exibição (Wireshark):</label>
+                        <input type="text" id="packet-display-filter" value="${this.escapeHtml(displayFilter)}" placeholder="ex.: tcp.port == 80 || dns">
+                        <button id="packet-filter-apply" class="btn btn-primary btn-small">Aplicar</button>
+                        <button id="packet-filter-clear" class="btn btn-secondary btn-small">Limpar</button>
+                    </div>
+                    <div class="pagination-controls">
+                        <span class="pagination-info">Mostrando ${offset + 1}-${Math.min(offset + limit, totalFiltered)} de ${totalFiltered}</span>
+                        <button id="packet-prev-page" class="btn btn-secondary btn-small" ${offset === 0 ? 'disabled' : ''}>Anterior</button>
+                        <button id="packet-next-page" class="btn btn-secondary btn-small" ${!hasMore ? 'disabled' : ''}>Próxima</button>
+                        <label for="packet-page-size">Por página:</label>
+                        <select id="packet-page-size">
+                            <option value="25" ${limit === 25 ? 'selected' : ''}>25</option>
+                            <option value="50" ${limit === 50 ? 'selected' : ''}>50</option>
+                            <option value="100" ${limit === 100 ? 'selected' : ''}>100</option>
+                            <option value="200" ${limit === 200 ? 'selected' : ''}>200</option>
+                        </select>
+                    </div>
+                </div>
                 <div class="table-container">
-                    <table>
+                    <table id="network-packets-table">
                         <thead>
                             <tr><th>#</th><th>Tempo (s)</th><th>Origem</th><th>Destino</th><th>Protocolo</th><th>Tam.</th><th>Info</th></tr>
                         </thead>
@@ -669,9 +971,47 @@ class SisifoApp {
                         </tbody>
                     </table>
                 </div>
-                <p>Clique em um pacote para ver detalhes.</p>
             `;
-            panel.querySelectorAll('tbody tr').forEach(tr => {
+            
+            // Bind filter events
+            document.getElementById('packet-filter-apply')?.addEventListener('click', () => {
+                const filter = document.getElementById('packet-display-filter').value;
+                this.loadNetworkPackets(captureId, { displayFilter: filter, offset: 0, limit: this.networkState[captureId].limit });
+            });
+            document.getElementById('packet-filter-clear')?.addEventListener('click', () => {
+                document.getElementById('packet-display-filter').value = '';
+                this.loadNetworkPackets(captureId, { displayFilter: '', offset: 0, limit: this.networkState[captureId].limit });
+            });
+            document.getElementById('packet-prev-page')?.addEventListener('click', () => {
+                if (this.networkState[captureId].offset > 0) {
+                    this.loadNetworkPackets(captureId, { 
+                        displayFilter: this.networkState[captureId].displayFilter,
+                        offset: Math.max(0, this.networkState[captureId].offset - this.networkState[captureId].limit),
+                        limit: this.networkState[captureId].limit
+                    });
+                }
+            });
+            document.getElementById('packet-next-page')?.addEventListener('click', () => {
+                this.loadNetworkPackets(captureId, { 
+                    displayFilter: this.networkState[captureId].displayFilter,
+                    offset: this.networkState[captureId].offset + this.networkState[captureId].limit,
+                    limit: this.networkState[captureId].limit
+                });
+            });
+            document.getElementById('packet-page-size')?.addEventListener('change', (e) => {
+                this.loadNetworkPackets(captureId, { 
+                    displayFilter: this.networkState[captureId].displayFilter,
+                    offset: 0,
+                    limit: parseInt(e.target.value)
+                });
+            });
+            document.getElementById('packet-display-filter')?.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    document.getElementById('packet-filter-apply').click();
+                }
+            });
+
+            panel.querySelectorAll('#network-packets-table tbody tr').forEach(tr => {
                 tr.addEventListener('click', () => {
                     this.loadNetworkPacketDetail(captureId, parseInt(tr.dataset.packet));
                 });
@@ -686,30 +1026,100 @@ class SisifoApp {
             const detail = await this.api(`/api/network/captures/${captureId}/packets/${packetNumber}`);
             const panel = document.getElementById('network-capture-detail');
             panel.classList.remove('hidden');
-            panel.innerHTML = `
-                <h3>Pacote #${detail.number} - Captura: ${this.escapeHtml(captureId)}</h3>
-                <div class="grid grid-2">
-                    <div>
-                        <p><strong>Tempo:</strong> ${detail.time.toFixed(6)}s (${this.escapeHtml(detail.time_iso)})</p>
-                        <p><strong>Origem:</strong> ${this.escapeHtml(detail.source)}</p>
-                        <p><strong>Destino:</strong> ${this.escapeHtml(detail.destination)}</p>
-                        <p><strong>Protocolo:</strong> ${this.escapeHtml(detail.protocol)}</p>
-                        <p><strong>Tamanho:</strong> ${detail.length} bytes</p>
-                        <p><strong>Info:</strong> ${this.escapeHtml(detail.info)}</p>
-                    </div>
-                    <div>
-                        <button class="btn btn-secondary btn-small" onclick="app.loadNetworkPackets('${this.escapeHtml(captureId)}')">Voltar à lista</button>
-                    </div>
-                </div>
-                ${detail.layers && detail.layers.length ? `
-                    <h4>Árvore de Protocolos</h4>
-                    <pre>${JSON.stringify(detail.layers, null, 2)}</pre>
-                ` : ''}
-                ${detail.hex_dump ? `
-                    <h4>Hex Dump</h4>
-                    <pre>${this.escapeHtml(detail.hex_dump)}</pre>
-                ` : ''}
-            `;
+            const state = this.networkState?.[captureId] || { displayFilter: '', offset: 0, limit: 100 };
+            
+            // Build panel safely using DOM manipulation instead of innerHTML
+            panel.innerHTML = ''; // Clear first
+            
+            const h3 = document.createElement('h3');
+            h3.textContent = `Pacote #${detail.number} - Captura: ${captureId}`;
+            panel.appendChild(h3);
+            
+            const grid = document.createElement('div');
+            grid.className = 'grid grid-2';
+            
+            // Left column - packet info
+            const leftDiv = document.createElement('div');
+            const origLen = detail.original_length != null && detail.original_length > 0 ? detail.original_length : detail.length;
+            const capLen = detail.captured_length != null && detail.captured_length > 0 ? detail.captured_length : detail.length;
+            const fields = [
+                { label: 'Tempo:', value: `${detail.time.toFixed(6)}s (${detail.time_iso || ""})` },
+                { label: 'Origem:', value: detail.source },
+                { label: 'Destino:', value: detail.destination },
+                { label: 'Protocolo:', value: detail.protocol },
+                { label: 'Comprimento no fio:', value: `${origLen} bytes` },
+                { label: 'Comprimento capturado:', value: `${capLen} bytes` },
+                { label: 'Info:', value: detail.info }
+            ];
+            fields.forEach(f => {
+                const p = document.createElement('p');
+                const strong = document.createElement('strong');
+                strong.textContent = f.label;
+                p.appendChild(strong);
+                p.appendChild(document.createTextNode(' ' + f.value));
+                leftDiv.appendChild(p);
+            });
+            grid.appendChild(leftDiv);
+            
+            // Right column - back button
+            const rightDiv = document.createElement('div');
+            const backBtn = document.createElement('button');
+            backBtn.className = 'btn btn-secondary btn-small';
+            backBtn.textContent = 'Voltar à lista';
+            backBtn.addEventListener('click', () => this.loadNetworkPackets(captureId, state));
+            rightDiv.appendChild(backBtn);
+            grid.appendChild(rightDiv);
+            
+            panel.appendChild(grid);
+
+            // Truncation banner
+            if (capLen < origLen) {
+                const truncBanner = document.createElement('div');
+                truncBanner.className = 'alert alert-warning';
+                truncBanner.textContent = `Aviso: captura truncada. ${capLen} bytes capturados de ${origLen} bytes no fio.`;
+                panel.appendChild(truncBanner);
+            }
+            
+            // Protocol tree - use textContent to prevent XSS
+            if (detail.layers && detail.layers.length) {
+                const h4 = document.createElement('h4');
+                h4.textContent = 'Árvore de Protocolos';
+                panel.appendChild(h4);
+                
+                const pre = document.createElement('pre');
+                pre.textContent = JSON.stringify(detail.layers, null, 2);
+                panel.appendChild(pre);
+            }
+            
+            // Hex dump section
+            const hexHeading = document.createElement('h4');
+            hexHeading.textContent = 'Hex Dump';
+            panel.appendChild(hexHeading);
+
+            if (detail.hex_dump_error) {
+                const errBox = document.createElement('div');
+                errBox.className = 'alert alert-error';
+                errBox.textContent = "Falha na extração de hex dump: " + detail.hex_dump_error;
+                panel.appendChild(errBox);
+            }
+
+            if (detail.hex_dump) {
+                if (detail.extracted_length != null && detail.extracted_length > 0) {
+                    const extractedInfo = document.createElement('p');
+                    extractedInfo.className = 'text-muted';
+                    const isPartial = capLen && detail.extracted_length < capLen;
+                    extractedInfo.textContent = `Bytes extraídos: ${detail.extracted_length}${isPartial ? " (parcial)" : ""}`;
+                    panel.appendChild(extractedInfo);
+                }
+                const pre = document.createElement('pre');
+                pre.textContent = detail.hex_dump;
+                panel.appendChild(pre);
+            } else if (!detail.hex_dump_error) {
+                const emptyNotice = document.createElement('p');
+                emptyNotice.className = 'text-muted';
+                emptyNotice.textContent = 'Nenhum dado de hex dump disponível para este pacote.';
+                panel.appendChild(emptyNotice);
+            }
         } catch (err) {
             this.showToast('Erro ao carregar detalhes do pacote: ' + err.message, 'error');
         }
@@ -717,77 +1127,117 @@ class SisifoApp {
 
     async loadNetworkStats(captureId) {
         try {
+            const state = this.networkState?.[captureId] || { displayFilter: '', offset: 0, limit: 100 };
             const data = await this.api(`/api/network/captures/${captureId}/stats`, {
                 method: 'POST',
-                body: JSON.stringify({display_filter: ''})
+                body: JSON.stringify({ display_filter: state.displayFilter })
             });
             const panel = document.getElementById('network-capture-detail');
             panel.classList.remove('hidden');
-            panel.innerHTML = `
-                <h3>Estatísticas da Captura: ${this.escapeHtml(captureId)}</h3>
-                <h4>Hierarquia de Protocolos</h4>
-                <div class="table-container">
-                    <table>
-                        <thead><tr><th>Protocolo</th><th>Pacotes</th><th>% Pacotes</th><th>Bytes</th><th>% Bytes</th></tr></thead>
-                        <tbody>
-                            ${data.protocol_stats.by_protocol.map(p => `
-                                <tr>
-                                    <td>${this.escapeHtml(p.protocol)}</td>
-                                    <td>${p.packets.toLocaleString()}</td>
-                                    <td>${p.percentage_packets.toFixed(1)}%</td>
-                                    <td>${p.bytes.toLocaleString()}</td>
-                                    <td>${p.percentage_bytes.toFixed(1)}%</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-                <p>Total: ${data.protocol_stats.total_packets.toLocaleString()} pacotes, ${data.protocol_stats.total_bytes.toLocaleString()} bytes</p>
-
-                <h4>Endpoints (Top 50)</h4>
-                <div class="table-container">
-                    <table>
-                        <thead><tr><th>Endereço</th><th>Tipo</th><th>RX Pkts</th><th>TX Pkts</th><th>RX Bytes</th><th>TX Bytes</th></tr></thead>
-                        <tbody>
-                            ${data.endpoints.map(e => `
-                                <tr>
-                                    <td>${this.escapeHtml(e.address)}</td>
-                                    <td>${this.escapeHtml(e.type)}</td>
-                                    <td>${e.packets_rx.toLocaleString()}</td>
-                                    <td>${e.packets_tx.toLocaleString()}</td>
-                                    <td>${e.bytes_rx.toLocaleString()}</td>
-                                    <td>${e.bytes_tx.toLocaleString()}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-
-                <h4>Conversações (Top 50)</h4>
-                <div class="table-container">
-                    <table>
-                        <thead><tr><th>A ↔ B</th><th>Protocolo</th><th>Pacotes</th><th>Bytes</th><th>Duração (s)</th></tr></thead>
-                        <tbody>
-                            ${data.conversations.map(c => `
-                                <tr>
-                                    <td>${this.escapeHtml(c.endpoint_a)} ↔ ${this.escapeHtml(c.endpoint_b)}</td>
-                                    <td>${this.escapeHtml(c.protocol)}</td>
-                                    <td>${c.packets.toLocaleString()}</td>
-                                    <td>${c.bytes.toLocaleString()}</td>
-                                    <td>${c.duration.toFixed(3)}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-
-                <h4>DNS</h4>
-                <pre>${JSON.stringify(data.dns, null, 2)}</pre>
-
-                <h4>TCP</h4>
-                <pre>${JSON.stringify(data.tcp, null, 2)}</pre>
-                <button class="btn btn-secondary btn-small" onclick="app.showNetworkCaptureDetail('${this.escapeHtml(captureId)}')">Voltar</button>
-            `;
+            panel.innerHTML = ''; // Clear
+            
+            // Header
+            const h3 = document.createElement('h3');
+            h3.textContent = `Estatísticas da Captura: ${captureId}`;
+            panel.appendChild(h3);
+            
+            if (state.displayFilter) {
+                const p = document.createElement('p');
+                p.className = 'filter-applied';
+                p.textContent = `Filtrado por: ${state.displayFilter}`;
+                panel.appendChild(p);
+            }
+            
+            // Protocol hierarchy
+            const h4a = document.createElement('h4');
+            h4a.textContent = 'Hierarquia de Protocolos';
+            panel.appendChild(h4a);
+            
+            const tableContainer1 = document.createElement('div');
+            tableContainer1.className = 'table-container';
+            const table1 = document.createElement('table');
+            const thead1 = document.createElement('thead');
+            thead1.innerHTML = '<tr><th>Protocolo</th><th>Pacotes</th><th>% Pacotes</th><th>Bytes</th><th>% Bytes</th></tr>';
+            table1.appendChild(thead1);
+            const tbody1 = document.createElement('tbody');
+            data.protocol_stats.by_protocol.forEach(p => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td>${this.escapeHtml(p.protocol)}</td><td>${p.packets.toLocaleString()}</td><td>${p.percentage_packets.toFixed(1)}%</td><td>${p.bytes.toLocaleString()}</td><td>${p.percentage_bytes.toFixed(1)}%</td>`;
+                tbody1.appendChild(tr);
+            });
+            table1.appendChild(tbody1);
+            tableContainer1.appendChild(table1);
+            panel.appendChild(tableContainer1);
+            
+            const p1 = document.createElement('p');
+            p1.textContent = `Total: ${data.protocol_stats.total_packets.toLocaleString()} pacotes, ${data.protocol_stats.total_bytes.toLocaleString()} bytes`;
+            panel.appendChild(p1);
+            
+            // Endpoints
+            const h4b = document.createElement('h4');
+            h4b.textContent = 'Endpoints (Top 50)';
+            panel.appendChild(h4b);
+            
+            const tableContainer2 = document.createElement('div');
+            tableContainer2.className = 'table-container';
+            const table2 = document.createElement('table');
+            const thead2 = document.createElement('thead');
+            thead2.innerHTML = '<tr><th>Endereço</th><th>Tipo</th><th>RX Pkts</th><th>TX Pkts</th><th>RX Bytes</th><th>TX Bytes</th></tr>';
+            table2.appendChild(thead2);
+            const tbody2 = document.createElement('tbody');
+            data.endpoints.forEach(e => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td>${this.escapeHtml(e.address)}</td><td>${this.escapeHtml(e.type)}</td><td>${e.packets_rx.toLocaleString()}</td><td>${e.packets_tx.toLocaleString()}</td><td>${e.bytes_rx.toLocaleString()}</td><td>${e.bytes_tx.toLocaleString()}</td>`;
+                tbody2.appendChild(tr);
+            });
+            table2.appendChild(tbody2);
+            tableContainer2.appendChild(table2);
+            panel.appendChild(tableContainer2);
+            
+            // Conversations
+            const h4c = document.createElement('h4');
+            h4c.textContent = 'Conversações (Top 50)';
+            panel.appendChild(h4c);
+            
+            const tableContainer3 = document.createElement('div');
+            tableContainer3.className = 'table-container';
+            const table3 = document.createElement('table');
+            const thead3 = document.createElement('thead');
+            thead3.innerHTML = '<tr><th>A <=> B</th><th>Protocolo</th><th>Pacotes</th><th>Bytes</th><th>Duração (s)</th></tr>';
+            table3.appendChild(thead3);
+            const tbody3 = document.createElement('tbody');
+            data.conversations.forEach(c => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td>${this.escapeHtml(c.endpoint_a)} <=> ${this.escapeHtml(c.endpoint_b)}</td><td>${this.escapeHtml(c.protocol)}</td><td>${c.packets.toLocaleString()}</td><td>${c.bytes.toLocaleString()}</td><td>${c.duration.toFixed(3)}</td>`;
+                tbody3.appendChild(tr);
+            });
+            table3.appendChild(tbody3);
+            tableContainer3.appendChild(table3);
+            panel.appendChild(tableContainer3);
+            
+            // DNS
+            const h4d = document.createElement('h4');
+            h4d.textContent = 'DNS';
+            panel.appendChild(h4d);
+            const pre1 = document.createElement('pre');
+            pre1.textContent = JSON.stringify(data.dns, null, 2);
+            panel.appendChild(pre1);
+            
+            // TCP
+            const h4e = document.createElement('h4');
+            h4e.textContent = 'TCP';
+            panel.appendChild(h4e);
+            const pre2 = document.createElement('pre');
+            pre2.textContent = JSON.stringify(data.tcp, null, 2);
+            panel.appendChild(pre2);
+            
+            // Back button
+            const backBtn = document.createElement('button');
+            backBtn.className = 'btn btn-secondary btn-small';
+            backBtn.textContent = 'Voltar';
+            backBtn.addEventListener('click', () => this.showNetworkCaptureDetail(captureId));
+            panel.appendChild(backBtn);
+            
         } catch (err) {
             this.showToast('Erro ao carregar estatísticas: ' + err.message, 'error');
         }
@@ -795,38 +1245,101 @@ class SisifoApp {
 
     async loadNetworkReport(captureId) {
         try {
+            const state = this.networkState?.[captureId] || { displayFilter: '', offset: 0, limit: 100 };
             const data = await this.api(`/api/network/captures/${captureId}/report`, {
                 method: 'POST',
-                body: JSON.stringify({display_filter: ''})
+                body: JSON.stringify({ display_filter: state.displayFilter })
             });
             const panel = document.getElementById('network-capture-detail');
             panel.classList.remove('hidden');
-            panel.innerHTML = `
-                <h3>Relatório da Captura: ${this.escapeHtml(data.capture_id)}</h3>
-                <div class="grid grid-2">
-                    <div>
-                        <p><strong>Pacotes:</strong> ${data.summary.packet_count.toLocaleString()}</p>
-                        <p><strong>Protocolos:</strong> ${data.protocol_stats.by_protocol.length}</p>
-                        <p><strong>Endpoints:</strong> ${data.endpoints.length}</p>
-                        <p><strong>Conversações:</strong> ${data.conversations.length}</p>
-                        <p><strong>Anomalias:</strong> ${data.anomalies.length}</p>
-                    </div>
-                    <div>
-                        <p><strong>Origem:</strong> ${this.escapeHtml(data.summary.source)}</p>
-                        <p><strong>Status:</strong> <span class="status status-${data.summary.status}">${data.summary.status}</span></p>
-                        <p><strong>Tamanho do arquivo:</strong> ${data.summary.file_size.toLocaleString()} bytes</p>
-                    </div>
-                </div>
-                <h4>Anomalias</h4>
-                <ul>
-                    ${data.anomalies.map(a => `<li>${this.escapeHtml(a)}</li>`).join('') || '<li>Nenhuma</li>'}
-                </ul>
-                <h4>Limitações</h4>
-                <ul>
-                    ${data.limitations.map(l => `<li>${this.escapeHtml(l)}</li>`).join('')}
-                </ul>
-                <button class="btn btn-secondary btn-small" onclick="app.showNetworkCaptureDetail('${this.escapeHtml(captureId)}')">Voltar</button>
-            `;
+            panel.innerHTML = '';
+            
+            const h3 = document.createElement('h3');
+            h3.textContent = `Relatório da Captura: ${data.capture_id}`;
+            panel.appendChild(h3);
+            
+            if (state.displayFilter) {
+                const p = document.createElement('p');
+                p.className = 'filter-applied';
+                p.textContent = `Filtrado por: ${state.displayFilter}`;
+                panel.appendChild(p);
+            }
+            
+            const grid = document.createElement('div');
+            grid.className = 'grid grid-2';
+            
+            const leftDiv = document.createElement('div');
+            const leftFields = [
+                { label: 'Pacotes:', value: data.summary.packet_count.toLocaleString() },
+                { label: 'Protocolos:', value: data.protocol_stats.by_protocol.length.toString() },
+                { label: 'Endpoints:', value: data.endpoints.length.toString() },
+                { label: 'Conversações:', value: data.conversations.length.toString() },
+                { label: 'Anomalias:', value: data.anomalies.length.toString() }
+            ];
+            leftFields.forEach(f => {
+                const p = document.createElement('p');
+                const strong = document.createElement('strong');
+                strong.textContent = f.label;
+                p.appendChild(strong);
+                p.appendChild(document.createTextNode(' ' + f.value));
+                leftDiv.appendChild(p);
+            });
+            grid.appendChild(leftDiv);
+            
+            const rightDiv = document.createElement('div');
+            const rightFields = [
+                { label: 'Origem:', value: data.summary.source },
+                { label: 'Status:', value: data.summary.status },
+                { label: 'Tamanho do arquivo:', value: `${data.summary.file_size.toLocaleString()} bytes` }
+            ];
+            rightFields.forEach(f => {
+                const p = document.createElement('p');
+                const strong = document.createElement('strong');
+                strong.textContent = f.label;
+                p.appendChild(strong);
+                p.appendChild(document.createTextNode(' ' + f.value));
+                rightDiv.appendChild(p);
+            });
+            grid.appendChild(rightDiv);
+            panel.appendChild(grid);
+            
+            // Anomalies
+            const h4a = document.createElement('h4');
+            h4a.textContent = 'Anomalias';
+            panel.appendChild(h4a);
+            const ul1 = document.createElement('ul');
+            if (data.anomalies.length === 0) {
+                const li = document.createElement('li');
+                li.textContent = 'Nenhuma';
+                ul1.appendChild(li);
+            } else {
+                data.anomalies.forEach(a => {
+                    const li = document.createElement('li');
+                    li.textContent = a;
+                    ul1.appendChild(li);
+                });
+            }
+            panel.appendChild(ul1);
+            
+            // Limitations
+            const h4b = document.createElement('h4');
+            h4b.textContent = 'Limitações';
+            panel.appendChild(h4b);
+            const ul2 = document.createElement('ul');
+            data.limitations.forEach(l => {
+                const li = document.createElement('li');
+                li.textContent = l;
+                ul2.appendChild(li);
+            });
+            panel.appendChild(ul2);
+            
+            // Back button
+            const backBtn = document.createElement('button');
+            backBtn.className = 'btn btn-secondary btn-small';
+            backBtn.textContent = 'Voltar';
+            backBtn.addEventListener('click', () => this.showNetworkCaptureDetail(captureId));
+            panel.appendChild(backBtn);
+            
         } catch (err) {
             this.showToast('Erro ao gerar relatório: ' + err.message, 'error');
         }
@@ -843,6 +1356,7 @@ class SisifoApp {
 
     trackJob(jobId, type) {
         if (this.jobsPolling.has(jobId)) return;
+        this.updateJobUI({id: jobId, status: 'pending'}, type);
         const interval = setInterval(async () => {
             try {
                 const job = await this.api(`/api/jobs/${jobId}`);
@@ -854,7 +1368,7 @@ class SisifoApp {
                         this.showToast(`${type} concluído com sucesso`, 'success');
                         if (type === 'scan') this.loadSessions();
                     } else {
-                        this.showToast(`${type} falhou: ${job.error}`, 'error');
+                        this.showToast(`${job.status === 'cancelled' ? 'Operação cancelada' : 'Não foi possível concluir. Veja as orientações no resultado.'}`, 'error');
                     }
                 }
             } catch (err) {
@@ -866,7 +1380,7 @@ class SisifoApp {
     }
 
     updateJobUI(job, type) {
-        const container = document.getElementById(`${type}-jobs`);
+        const container = document.getElementById(`${type === 'osint-ai' ? 'osint' : type}-jobs`);
         if (!container) return;
 
         let jobEl = container.querySelector(`[data-job-id="${job.id}"]`);
@@ -877,6 +1391,9 @@ class SisifoApp {
             container.prepend(jobEl);
         }
 
+        if (type === 'osint' || type === 'osint-ai') {
+            this.renderOsintJob(jobEl, job, type); return;
+        }
         jobEl.innerHTML = `
             <div class="job-header">
                 <span class="job-type">${type === 'scan' ? 'Execução' : type === 'analyze' ? 'Análise IA' : 'Consulta OSINT'}</span>
@@ -887,6 +1404,79 @@ class SisifoApp {
             ${job.error ? `<div class="job-result job-error">Erro: ${this.escapeHtml(job.error)}</div>` : ''}
             ${['pending', 'running'].includes(job.status) ? '<button class="btn btn-secondary cancel-job">Cancelar</button>' : ''}
         `;
+        if (type === 'osint' && job.status === 'completed' && job.result?.results?.length) {
+            this.addOsintInterpretation(jobEl, job);
+        }
+    }
+
+    renderOsintJob(container, job, type) {
+        container.replaceChildren();
+        const title = document.createElement('h4'); title.textContent = type === 'osint-ai' ? 'Explicação da IA' : 'Verificação de informações';
+        const status = document.createElement('p');
+        status.textContent = ({pending:'Na fila. Aguarde…', running:'Consultando. Você pode cancelar abaixo.', cancelling:'Cancelando…', completed:'Concluída', cancelled:'Cancelada por você.', failed:'Não foi possível concluir.', partial:'Resultado incompleto.', interrupted:'Interrompida após reiniciar o sistema.'})[job.status] || job.status;
+        container.append(title, status);
+        const add = text => { const p = document.createElement('p'); p.textContent = text; container.appendChild(p); };
+        if (job.status === 'failed') {
+            const messages = {AUTHENTICATION_FAILED:'A chave foi recusada. Edite a configuração do serviço e confira a chave.', ACCESS_FORBIDDEN:'O serviço negou acesso. Confira as permissões e a assinatura contratada.', RATE_LIMIT_EXCEEDED:'O limite de consultas foi atingido. Aguarde antes de tentar novamente.', NETWORK_ERROR:'Não foi possível conectar ao serviço. Verifique sua conexão e tente mais tarde.', INVALID_JSON:'O serviço retornou uma resposta incompatível. Tente novamente mais tarde.'};
+            add(messages[job.result?.error_code] || job.error || 'Verifique a configuração e a disponibilidade do serviço.');
+            if (job.result?.retry_after) add(`Aguarde pelo menos ${job.result.retry_after} segundos.`);
+        }
+        if (job.result?.content) add(job.result.content);
+        if (job.status === 'completed' && type === 'osint') {
+            const results = job.result?.results || [];
+            add(results.length ? `${results.length} ocorrência(s) encontrada(s). Isso não confirma acesso atual à sua conta.` : 'Nenhuma ocorrência encontrada nesta fonte. Isso não garante ausência de exposição.');
+            results.forEach((r, i) => {
+                const e = r.evidence || {};
+                add(`${i + 1}. ${e.hibp_title || e.hibp_breach_name || r.source}${e.hibp_breach_date ? ' — ' + e.hibp_breach_date : ''}`);
+                if (e.hibp_data_classes?.length) add('Dados envolvidos: ' + e.hibp_data_classes.map(x => ({'Email addresses':'Endereços de e-mail','Passwords':'Senhas','Phone numbers':'Telefones','IP addresses':'Endereços IP','Usernames':'Nomes de usuário'})[x] || x).join(', '));
+                for (const text of [...(r.warnings || []), ...(r.limitations || [])]) add(text);
+            });
+            if (results.length) this.addOsintInterpretation(container, job);
+        }
+        if (['pending','running'].includes(job.status)) {
+            const cancel = document.createElement('button'); cancel.textContent = 'Cancelar consulta'; cancel.className = 'btn btn-secondary cancel-job'; container.appendChild(cancel);
+        }
+        if (job.result) {
+            const details = document.createElement('details'); const summary = document.createElement('summary'); summary.textContent = 'Ver detalhes técnicos';
+            const pre = document.createElement('pre'); pre.textContent = JSON.stringify(job.result, null, 2); details.append(summary, pre); container.appendChild(details);
+        }
+    }
+
+    addOsintInterpretation(container, job) {
+        const group = document.createElement('div');
+        group.className = 'osint-ai-selection';
+        group.textContent = 'Quer entender melhor? Selecione resultados para uma explicação opcional pela IA. Você verá os dados antes de enviá-los.';
+        const checks = [];
+        job.result.results.forEach((result, index) => {
+            const label = document.createElement('label');
+            const check = document.createElement('input'); check.type = 'checkbox';
+            checks.push(check); label.appendChild(check);
+            label.appendChild(document.createTextNode(`Resultado ${index + 1}: ${result.source} — ${result.evidence?.hibp_breach_name || 'evidência'}`));
+            group.appendChild(label);
+        });
+        const button = document.createElement('button'); button.textContent = 'Revisar dados para a IA'; button.disabled = true; button.className = 'btn btn-secondary';
+        checks.forEach(c => c.addEventListener('change', () => { button.disabled = !checks.some(x => x.checked); }));
+        const previewBox = document.createElement('div');
+        button.addEventListener('click', async () => {
+            button.disabled = true; previewBox.replaceChildren();
+            try {
+                const indices = checks.flatMap((c, i) => c.checked ? [i] : []);
+                const response = await this.api('/api/osint/ai/preview', {method: 'POST', body: JSON.stringify({job_id: job.id, indices})});
+                const preview = document.createElement('pre'); preview.textContent = JSON.stringify(JSON.parse(response.preview), null, 2);
+                const destination = document.createElement('p'); destination.textContent = `Destino: ${response.destination}. Envio separado da consulta OSINT.`;
+                const send = document.createElement('button'); send.textContent = 'Autorizar envio desta prévia à IA';
+                send.addEventListener('click', async () => {
+                    send.disabled = true;
+                    try {
+                        const result = await this.api('/api/osint/ai/interpret', {method: 'POST', body: JSON.stringify({proposal_id: response.proposal_id, confirmed: true})});
+                        this.trackJob(result.job_id, 'osint-ai');
+                    } catch (err) { this.showToast(err.message, 'error'); send.disabled = false; }
+                });
+                previewBox.append(destination, preview, send);
+            } catch (err) { this.showToast(err.message, 'error'); }
+            finally { button.disabled = !checks.some(x => x.checked); }
+        });
+        group.append(button, previewBox); container.appendChild(group);
     }
 
     async configureOsintConnector(id) {
@@ -899,7 +1489,7 @@ class SisifoApp {
         form.appendChild(title);
         for (const field of meta.config.fields) {
             const label = document.createElement('label'); label.textContent = field.description;
-            const input = document.createElement('input'); input.name = field.name;
+            const input = document.createElement('input'); input.name = field.name; input.required = true;
             input.type = field.secret ? 'password' : 'text'; input.autocomplete = 'new-password';
             label.appendChild(input); form.appendChild(label);
         }
@@ -911,7 +1501,7 @@ class SisifoApp {
             event.preventDefault();
             try {
                 await this.api(`/api/config/osint/${encodeURIComponent(id)}`, {method: 'POST', body: JSON.stringify(Object.fromEntries(new FormData(form)))});
-                form.reset(); dialog.close(); dialog.remove(); await this.loadConfigStatus();
+                form.reset(); dialog.close(); dialog.remove(); await this.loadConfigStatus(); await this.loadOsintConnectors(); this.showToast('Configuração salva. Agora você pode fazer uma consulta.', 'success');
             } catch (err) { this.showToast(err.message, 'error'); }
         };
         dialog.showModal();
@@ -919,7 +1509,7 @@ class SisifoApp {
 
     startJobPolling() {
         this.api('/api/jobs').then(({jobs}) => {
-            for (const job of jobs) {
+            for (const job of [...jobs].reverse()) {
                 this.updateJobUI(job, job.type);
                 if (['pending', 'running', 'cancelling'].includes(job.status)) this.trackJob(job.id, job.type);
             }
@@ -963,3 +1553,91 @@ class SisifoApp {
 }
 
 const app = new SisifoApp();
+
+// Conversation stays in memory; responses are rendered as text, never HTML.
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('ai-offline').addEventListener('click', async () => {
+        try {
+            await app.api('/api/config/ai', {method: 'POST', body: JSON.stringify({provider: 'export'})});
+            document.getElementById('config-api-key').value = '';
+            document.getElementById('chat-connection').textContent = 'IA desconectada. Modo offline.';
+            document.getElementById('ai-connection-status').textContent = 'Modo offline. Nenhuma consulta de IA será enviada.';
+        } catch (err) { app.showToast(err.message, 'error'); }
+    });
+    let history = [];
+    let previewSession = null;
+    let busy = false;
+    const status = document.getElementById('chat-status');
+    const session = document.getElementById('chat-session');
+    const consent = document.getElementById('chat-consent');
+    const log = document.getElementById('chat-messages');
+    function render() {
+        log.replaceChildren();
+        for (const message of history) {
+            const item = document.createElement('p');
+            item.style.whiteSpace = 'pre-wrap';
+            item.className = message.role === 'user' ? 'ai-message-user' : 'ai-message-assistant';
+            item.textContent = (message.role === 'user' ? 'Você: ' : 'IA: ') + message.content;
+            log.appendChild(item);
+        }
+    }
+    session.addEventListener('input', () => {
+        previewSession = null; consent.checked = false;
+        history = []; render();
+        document.getElementById('chat-context').classList.add('hidden');
+    });
+    document.getElementById('ai-discover').addEventListener('click', async (event) => {
+        const button = event.target;
+        button.disabled = true;
+        const state = document.getElementById('ai-connection-status');
+        state.textContent = 'Consultando catálogo da API…';
+        try {
+            const result = await app.api('/api/ai/models', {method: 'POST', body: JSON.stringify({
+                endpoint: document.getElementById('config-endpoint').value,
+                api_key: document.getElementById('config-api-key').value || null
+            })});
+            const list = document.getElementById('ai-models');
+            list.replaceChildren();
+            for (const model of result.models) {
+                const option = document.createElement('option');
+                option.value = model; list.appendChild(option);
+            }
+            state.textContent = result.models.length + ' modelos encontrados. Escolha um modelo abaixo e teste a conexão.';
+        } catch (err) { state.textContent = err.message + ' Você pode informar um modelo manualmente.'; }
+        finally { button.disabled = false; }
+    });
+    document.getElementById('chat-preview').addEventListener('click', async () => {
+        const id = session.value.trim();
+        try {
+            const data = await app.api('/api/analyze/preview', {method: 'POST', body: JSON.stringify({session_id: id})});
+            if (session.value.trim() !== id) return;
+            const pre = document.getElementById('chat-context');
+            pre.textContent = JSON.stringify(data, null, 2); pre.classList.remove('hidden');
+            previewSession = id; consent.checked = false;
+        } catch (err) { status.textContent = err.message; }
+    });
+    document.getElementById('chat-clear').addEventListener('click', () => {
+        if (busy) return;
+        history = []; render(); status.textContent = 'Nova conversa.';
+    });
+    document.getElementById('ai-chat-form').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (busy) return;
+        const id = session.value.trim();
+        if (id && (previewSession !== id || !consent.checked)) {
+            status.textContent = 'Revise o contexto e autorize seu envio antes de conversar com esta sessão.'; return;
+        }
+        const input = document.getElementById('chat-input');
+        const message = {role: 'user', content: input.value};
+        busy = true; session.disabled = true; status.textContent = 'Aguardando resposta…';
+        const submit = event.target.querySelector('[type=submit]'); submit.disabled = true;
+        try {
+            const result = await app.api('/api/ai/chat', {method: 'POST', body: JSON.stringify({
+                messages: [...history, message], session_id: id || null, include_evidence: Boolean(id && consent.checked)
+            })});
+            history.push(message, {role: 'assistant', content: result.content});
+            render(); input.value = ''; status.textContent = 'Modelo: ' + result.model;
+        } catch (err) { status.textContent = err.message; }
+        finally { busy = false; session.disabled = false; submit.disabled = false; }
+    });
+});

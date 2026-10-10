@@ -58,20 +58,24 @@ def reply(evidence):
     )
 
 
-def test_setup_hides_key_and_preserves_local_only_files(tmp_path):
+def test_setup_hides_key_and_preserves_local_only_files(tmp_path, monkeypatch):
     key = "nvapi-synthetic-test-key"
-    result = CliRunner().invoke(app, ["setup"], input=f"nvidia\n\n{key}\n{key}\n")
+    from sisifo.core import ai_connection
+    monkeypatch.setattr(ai_connection, "request", lambda endpoint, path, key, body=None, control=None:
+        {"data": [{"id": "test-model"}]} if path == "/models" else
+        {"choices": [{"finish_reason": "stop", "message": {"content": "OK"}}]})
+    result = CliRunner().invoke(app, ["setup"], input=f"1\nhttps://api.example/v1\n{key}\n1\ny\n")
     assert result.exit_code == 0, result.output
     assert key not in result.output
-    assert config.nvidia_key() == key
+    assert ai_connection.connection()["api_key"] == key
     assert "nvapi" not in (config.config_dir() / "config.json").read_text()
-    assert config.load_config()["provider"] == "nvidia"
+    assert config.load_config()["provider"] == "api"
     status = CliRunner().invoke(app, ["ai-status"])
     assert status.exit_code == 0 and key not in status.output
 
 
 def test_setup_export_does_not_ask_key():
-    result = CliRunner().invoke(app, ["setup"], input="export\n")
+    result = CliRunner().invoke(app, ["setup"], input="2\n")
     assert result.exit_code == 0
     assert "Chave de API" not in result.output
     assert not (config.config_dir() / "nvidia.key").exists()

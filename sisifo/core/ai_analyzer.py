@@ -191,11 +191,17 @@ def _analyze(session_id, model=None, endpoint=None, provider=None, max_batches=5
             "path": str(session_dir(session_id) / "analysis/ai-input.json"),
             "coverage": plan["coverage"],
         }
-    if provider not in {"ollama", "nvidia"} or not model:
+    if provider not in {"ollama", "nvidia", "api"} or not model:
         raise ValueError("Selecione provedor e modelo com sisifo setup.")
     if resume_id and not re.fullmatch(r"[a-f0-9]{32}", resume_id):
         raise ValueError("ID de análise inválido.")
-    if provider == "nvidia":
+    if provider == "api":
+        from .ai_connection import connection
+        base = connection()["endpoint"]
+        if endpoint and endpoint.rstrip("/") != base:
+            raise ValueError("Use o endereço da API configurada.")
+        endpoint = base
+    elif provider == "nvidia":
         from .config import NVIDIA_ENDPOINT
         if endpoint and endpoint.rstrip("/") != NVIDIA_ENDPOINT:
             raise ValueError("Endpoint NVIDIA deve ser o oficial.")

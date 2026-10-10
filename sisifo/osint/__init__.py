@@ -16,6 +16,7 @@ from sisifo.osint.executor import (
     load_osint_config,
     save_osint_config,
 )
+from sisifo.osint.integration import register_dummy_integration
 from sisifo.osint.registry import get_connector, list_connectors
 
 __all__ = [
@@ -34,4 +35,5 @@ __all__ = [
     "save_osint_config",
     "delete_osint_config",
     "get_connector_status",
+    "register_dummy_integration",
 ]

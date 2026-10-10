@@ -8,7 +8,7 @@ _PATTERNS = (
     re.compile(r"(?i)bearer\s+[A-Za-z0-9._~+/-]+=*"),
     re.compile(r"(?i)(?:password|passwd|api[_-]?key|token|secret)\s*[=:]\s*[^\s&;,\"<>]+"),
     re.compile(r"(?i)https?://[^\s/:]+:[^\s/@]+@"),
-    re.compile(r"[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{12,}"),
+    re.compile(r"(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{12,}"),
 )
 
 

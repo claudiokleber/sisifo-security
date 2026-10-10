@@ -87,6 +87,15 @@ def complete(provider, model, system, data, endpoint=None):
         },
         {"role": "user", "content": json.dumps(data, ensure_ascii=False)},
     ]
+    if provider == "api":
+        from .ai_connection import complete_messages, connection
+        profile = connection()
+        if endpoint and endpoint.rstrip("/") != profile["endpoint"]:
+            raise ValueError("A chave só pode ser enviada à API configurada.")
+        profile["model"] = model
+        runtime = _runtime.get()
+        return complete_messages(profile, messages, runtime[0] if runtime else None,
+                                 runtime[1] if runtime else 8192, json_output=True)
     if provider == "nvidia":
         if endpoint and endpoint.rstrip("/") != NVIDIA_ENDPOINT:
             raise ValueError("A chave NVIDIA só pode ser enviada ao endpoint oficial.")

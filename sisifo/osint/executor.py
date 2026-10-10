@@ -1,6 +1,8 @@
 import asyncio
 import threading
 import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
@@ -8,6 +10,7 @@ import httpx
 from pydantic import ValidationError
 
 from sisifo.core.config import delete_service_config, load_service_config, save_service_config
+from sisifo.core.execution import BudgetExceeded, Cancelled, Control, controlled
 from sisifo.osint.contract import (
     BaseConnector,
     ConnectorResult,
@@ -21,6 +24,8 @@ class OsintExecutionError(Exception):
         super().__init__(message)
         self.code = code
         self.details = details or {}
+
+
 
 
 class OsintExecutor:
@@ -89,6 +94,7 @@ class OsintExecutor:
         query: str,
         query_type: QueryType,
         config: Dict[str, Any],
+        control: Optional[Control] = None,
     ) -> List[ConnectorResult]:
         """Execute a query with full validation and enforcement."""
         # 1. Validate connector configuration
@@ -114,7 +120,7 @@ class OsintExecutor:
             )
 
         # 4. Check rate limits
-        if not self._check_rate_limit():
+        if getattr(self.connector, "simulated", False) and not self._check_rate_limit():
             raise OsintExecutionError(
                 "Limite de taxa excedido",
                 code="RATE_LIMIT_EXCEEDED",
@@ -122,11 +128,15 @@ class OsintExecutor:
 
         # 5. Execute the query
         try:
+            if control:
+                control.check()
             if getattr(self.connector, "simulated", False):
                 raw_results = self.connector.query(query, query_type, config)
             else:
                 # Real connectors must explicitly use this transport; no legacy direct query fallback.
-                raw_results = await self.connector.query_with_transport(query, query_type, config, self)
+                raw_results = await self.connector.query_with_transport(query, query_type, config, self, control)
+        except (OsintExecutionError, Cancelled, BudgetExceeded):
+            raise
         except Exception as e:
             raise OsintExecutionError(
                 "Erro na execução da consulta",
@@ -135,8 +145,12 @@ class OsintExecutor:
             ) from e
 
         # 6. Normalize results
+        if control:
+            control.check()
         try:
-            normalized = self.connector.normalize(raw_results)
+            normalized = self.connector.normalize(raw_results, query)
+        except (OsintExecutionError, Cancelled, BudgetExceeded):
+            raise
         except Exception as e:
             raise OsintExecutionError(
                 "Erro na normalização dos resultados",
@@ -147,6 +161,8 @@ class OsintExecutor:
         # 7. Validate each result
         validated_results = []
         for result in normalized:
+            if control:
+                control.check()
             try:
                 validated = ConnectorResult.model_validate(result.model_dump() if isinstance(result, ConnectorResult) else result)
                 if validated.source != self.meta.id or validated.query != query or validated.query_type != query_type:
@@ -161,7 +177,13 @@ class OsintExecutor:
         return validated_results
 
     async def execute_http_query(self, url, method="GET", headers=None, params=None,
-                                 json_data=None, config=None):
+                                 json_data=None, config=None, control: Optional[Control] = None):
+        control = control or Control(60)
+        return await controlled(self._execute_http_query(
+            url, method, headers, params, json_data, config, control), control)
+
+    async def _execute_http_query(self, url, method="GET", headers=None, params=None,
+                                  json_data=None, config=None, control=None):
         if not self._validate_destination(url):
             raise OsintExecutionError("Destino não permitido", code="DESTINATION_NOT_ALLOWED")
         if method not in {"GET", "POST"}:
@@ -171,6 +193,8 @@ class OsintExecutor:
         retries = min(3, max(0, int(self.meta.limits.get("max_retries", 2)))) if method == "GET" else 0
         max_size = min(10 * 1024 * 1024, max(1, int(self.meta.limits.get("max_response_size", 1024 * 1024))))
         for attempt in range(retries + 1):
+            if control:
+                control.check()
             if not self._check_rate_limit():
                 raise OsintExecutionError("Limite de taxa atingido", code="RATE_LIMIT_EXCEEDED")
             try:
@@ -178,12 +202,25 @@ class OsintExecutor:
                     code = response.status_code
                     if code in {429, 502, 503, 504} and attempt < retries:
                         value = response.headers.get("Retry-After", "")
-                        wait = min(30, int(value)) if value.isdigit() else 2 ** attempt
+                        if value.isdigit():
+                            wait = int(value)
+                        else:
+                            try:
+                                wait = max(0, (parsedate_to_datetime(value) - datetime.now(timezone.utc)).total_seconds())
+                            except (ValueError, TypeError, OverflowError):
+                                wait = 2 ** attempt
+                        if control and wait >= control.remaining():
+                            raise OsintExecutionError("Prazo do serviço excede o orçamento; tente depois.",
+                                code="RATE_LIMIT_EXCEEDED" if code == 429 else "RETRY_DEFERRED",
+                                details={"retry_after": wait, "status_code": code})
                     else:
                         if code >= 300:
-                            raise OsintExecutionError(f"Serviço retornou HTTP {code}", code="HTTP_ERROR")
+                            # Include status code in details for proper error mapping
+                            raise OsintExecutionError(f"Serviço retornou HTTP {code}", code="HTTP_ERROR", details={"status_code": code, "retry_after": response.headers.get("Retry-After")})
                         body = bytearray()
                         async for chunk in response.aiter_bytes(chunk_size=16384):
+                            if control:
+                                control.check()
                             body.extend(chunk)
                             if len(body) > max_size:
                                 raise OsintExecutionError("Resposta excede limite", code="RESPONSE_TOO_LARGE")
@@ -193,7 +230,9 @@ class OsintExecutor:
                         except (ValueError, UnicodeError):
                             raise OsintExecutionError("Resposta JSON inválida", code="INVALID_JSON") from None
                         return result
-                await asyncio.sleep(wait)
+                # Wait for retry with cancellation check
+                if wait > 0:
+                    await asyncio.sleep(wait)
             except httpx.RequestError:
                 if attempt == retries:
                     raise OsintExecutionError("Falha de rede ou timeout", code="NETWORK_ERROR") from None
@@ -201,12 +240,13 @@ class OsintExecutor:
         raise OsintExecutionError("Tentativas esgotadas")
 
 
-def run_query(connector, query, query_type, config):
+def run_query(connector, query, query_type, config, control: Optional[Control] = None):
     """Synchronous facade shared by CLI, agent and job workers."""
+    control = control or Control(60)
     async def run():
         executor = OsintExecutor(connector)
         try:
-            return await executor.execute_query(query, query_type, config)
+            return await executor.execute_query(query, query_type, config, control)
         finally:
             await executor.close()
     return asyncio.run(run())

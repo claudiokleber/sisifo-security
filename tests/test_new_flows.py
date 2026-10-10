@@ -89,7 +89,7 @@ def test_osint_stream_limit_without_length_and_client_close():
     asyncio.run(run())
 
 
-def test_osint_retry_after_is_capped(monkeypatch):
+def test_osint_retry_after_beyond_budget_does_not_retry(monkeypatch):
     waits = []
     async def sleep(seconds):
         waits.append(seconds)
@@ -106,7 +106,7 @@ def test_osint_retry_after_is_capped(monkeypatch):
         finally:
             await executor.close()
     asyncio.run(run())
-    assert waits == [30, 30]
+    assert waits == []
 
 
 def test_web_config_csrf_jobs_and_secret_errors(monkeypatch):

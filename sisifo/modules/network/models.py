@@ -197,6 +197,10 @@ class PacketDetail(BaseModel):
     info: str
     layers: list[dict] = Field(default_factory=list, description="Protocol layer tree")
     hex_dump: str = Field(default="", description="Hex/ASCII dump of packet bytes")
+    original_length: int = Field(default=0, description="Original packet length on wire (frame.len)")
+    captured_length: int = Field(default=0, description="Captured packet length (frame.caplen)")
+    extracted_length: int = Field(default=0, description="Bytes actually extracted from hex dump")
+    hex_dump_error: Optional[str] = Field(default=None, description="Error message if hex dump extraction failed")
 
     model_config = ConfigDict(extra="forbid")
 
