@@ -15,6 +15,7 @@ def _run_server(sock: socket.socket, ready_event: threading.Event):
     import uvicorn
 
     from sisifo.web.server import app as web_app
+
     config = uvicorn.Config(web_app, log_level="info")
     server = uvicorn.Server(config)
     ready_event.set()
@@ -55,6 +56,7 @@ def start_web(port: int = 8000, no_browser: bool = False) -> None:
     import os
 
     import uvicorn
+
     if not 1 <= port <= 65535:
         raise ValueError("Port must be between 1 and 65535")
     host = os.getenv("SISIFO_WEB_BIND", "127.0.0.1")
@@ -69,6 +71,7 @@ def start_web(port: int = 8000, no_browser: bool = False) -> None:
         sock.listen(128)
         server = uvicorn.Server(uvicorn.Config(web_app, log_level="info"))
         done = threading.Event()
+
         def announce():
             while not done.wait(0.1):
                 if server.started and existing_web(port):
@@ -80,6 +83,7 @@ def start_web(port: int = 8000, no_browser: bool = False) -> None:
                         except Exception:
                             console.print(f"Abra manualmente: {url}")
                     return
+
         worker = threading.Thread(target=announce, daemon=True)
         worker.start()
         try:
@@ -92,8 +96,12 @@ def start_web(port: int = 8000, no_browser: bool = False) -> None:
 @app.callback(invoke_without_command=True)
 def web(
     ctx: typer.Context,
-    port: int = typer.Option(8000, "--port", "-p", help="Porta para o servidor web", min=1, max=65535),
-    no_browser: bool = typer.Option(False, "--no-browser", help="Não abrir navegador automaticamente"),
+    port: int = typer.Option(
+        8000, "--port", "-p", help="Porta para o servidor web", min=1, max=65535
+    ),
+    no_browser: bool = typer.Option(
+        False, "--no-browser", help="Não abrir navegador automaticamente"
+    ),
 ):
     if ctx.invoked_subcommand is not None:
         return

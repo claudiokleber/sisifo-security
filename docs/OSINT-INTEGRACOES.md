@@ -239,3 +239,13 @@ Cada conector declara `ai_evidence_fields`; fontes desconhecidas ou evidência e
 286 testes passaram, 4 avisos conhecidos (1 Starlette/httpx e 3 serializações de enum Pydantic). Ruff e sintaxe JavaScript aprovados. Navegador real contra FastAPI local, com HIBP e IA simulados: configuração, recusa/aceite de envio, resultado positivo, resultado vazio, credencial recusada, cancelamento, IA não configurada, descoberta de modelo e interpretação autorizada. Sem erros no console observado.
 
 Esses testes não homologam HIBP/IA em produção. Não foram utilizadas credenciais reais, serviços pagos, novo teste Linux ou rebuild Docker. O roteiro de navegador foi manual, não uma suíte E2E automatizada permanente. Nenhum commit/push nesta tarefa.
+
+### Validação de navegador e homologação
+
+Consulte [OSINT-VALIDACAO.md](OSINT-VALIDACAO.md) para executar os testes E2E,
+consultar os limites da simulação e seguir o roteiro de homologação externa.
+A suíte padrão e o job de navegador são verificações separadas.
+
+### Situação da validação em 2026-10-12
+
+JUnit local registra 11 E2E aprovados com transporte simulado. A CI consultada aprova o commit base, sem o novo job browser-e2e. Homologação externa pendente. Consulte [o registro de validação](OSINT-VALIDACAO.md) para distinguir versões e evidências.

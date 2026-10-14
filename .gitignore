@@ -16,3 +16,5 @@ build/
 .env.*
 *.key
 *.pem
+artifacts/e2e/
+artifacts/validation/

@@ -1,4 +1,3 @@
-
 import typer
 from rich.console import Console
 
@@ -38,6 +37,7 @@ def verify(session_id: str):
 def recover(session_id: str):
     """Marcar sessão órfã como interrompida, sem reiniciar ferramentas."""
     import docker
+
     try:
         result = recover_session(session_id)
     except docker.errors.DockerException:

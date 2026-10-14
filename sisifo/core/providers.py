@@ -89,13 +89,19 @@ def complete(provider, model, system, data, endpoint=None):
     ]
     if provider == "api":
         from .ai_connection import complete_messages, connection
+
         profile = connection()
         if endpoint and endpoint.rstrip("/") != profile["endpoint"]:
             raise ValueError("A chave só pode ser enviada à API configurada.")
         profile["model"] = model
         runtime = _runtime.get()
-        return complete_messages(profile, messages, runtime[0] if runtime else None,
-                                 runtime[1] if runtime else 8192, json_output=True)
+        return complete_messages(
+            profile,
+            messages,
+            runtime[0] if runtime else None,
+            runtime[1] if runtime else 8192,
+            json_output=True,
+        )
     if provider == "nvidia":
         if endpoint and endpoint.rstrip("/") != NVIDIA_ENDPOINT:
             raise ValueError("A chave NVIDIA só pode ser enviada ao endpoint oficial.")
@@ -136,7 +142,10 @@ def complete(provider, model, system, data, endpoint=None):
                 "messages": messages,
                 "stream": False,
                 "format": AIResponse.model_json_schema(),
-                "options": {"temperature": 0, "num_predict": _runtime.get()[1] if _runtime.get() else 8192},
+                "options": {
+                    "temperature": 0,
+                    "num_predict": _runtime.get()[1] if _runtime.get() else 8192,
+                },
             },
         )
         if not envelope.get("done"):

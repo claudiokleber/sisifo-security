@@ -90,9 +90,24 @@ def prepare_batches(session_id, max_items=20, max_chars=24000):
         "session_id": session_id,
         "session_status": report["session"]["status"],
         "runs": [
-            redact({k: r[k] for k in ("tool", "status", "exit_code", "findings_count",
-                "coverage", "command", "started_at", "finished_at", "error",
-                "source_started_at", "source_finished_at")})[0]
+            redact(
+                {
+                    k: r[k]
+                    for k in (
+                        "tool",
+                        "status",
+                        "exit_code",
+                        "findings_count",
+                        "coverage",
+                        "command",
+                        "started_at",
+                        "finished_at",
+                        "error",
+                        "source_started_at",
+                        "source_finished_at",
+                    )
+                }
+            )[0]
             for r in report["session"]["runs"]
         ],
         "batches": batches,
@@ -106,7 +121,8 @@ def prepare_batches(session_id, max_items=20, max_chars=24000):
         },
         "scope": report["session"]["scope"],
         "redaction": {"count": redactions, "policy_version": 1, "guarantee": "heuristic"},
-        "limitations": report["limitations"] + ["Mascaramento automático é heurístico; revise a prévia antes de enviar."],
+        "limitations": report["limitations"]
+        + ["Mascaramento automático é heurístico; revise a prévia antes de enviar."],
     }
     result, additional = redact(result)
     result["redaction"]["count"] += additional
@@ -149,6 +165,7 @@ def validate_response(content, evidence):
             if evidence_id not in recommendation.evidence_ids or not quote.strip():
                 raise ValueError("Citação sem referência válida.")
             item = next(f for f in evidence if f["id"] == evidence_id)
+
             def strings(value):
                 if isinstance(value, str):
                     return [value]
@@ -157,22 +174,51 @@ def validate_response(content, evidence):
                 if isinstance(value, list):
                     return [s for v in value for s in strings(v)]
                 return []
+
             if not any(quote in text for text in strings(item)):
                 raise ValueError("Citação não encontrada na evidência.")
     return response
 
 
-def analyze_session(session_id, model=None, endpoint=None, provider=None, max_batches=50,
-                    *, max_seconds=1800, token_budget=250000, resume_id=None, control=None):
+def analyze_session(
+    session_id,
+    model=None,
+    endpoint=None,
+    provider=None,
+    max_batches=50,
+    *,
+    max_seconds=1800,
+    token_budget=250000,
+    resume_id=None,
+    control=None,
+):
     directory = session_dir(session_id)
     with file_lock(directory / "analysis" / ".analysis.lock"):
-        return _analyze(session_id, model, endpoint, provider, max_batches,
-                        max_seconds=max_seconds, token_budget=token_budget,
-                        resume_id=resume_id, control=control)
+        return _analyze(
+            session_id,
+            model,
+            endpoint,
+            provider,
+            max_batches,
+            max_seconds=max_seconds,
+            token_budget=token_budget,
+            resume_id=resume_id,
+            control=control,
+        )
 
 
-def _analyze(session_id, model=None, endpoint=None, provider=None, max_batches=50,
-             *, max_seconds=1800, token_budget=250000, resume_id=None, control=None):
+def _analyze(
+    session_id,
+    model=None,
+    endpoint=None,
+    provider=None,
+    max_batches=50,
+    *,
+    max_seconds=1800,
+    token_budget=250000,
+    resume_id=None,
+    control=None,
+):
     if not 1 <= max_batches <= 100:
         raise ValueError("max-batches deve estar entre 1 e 100.")
     if not 1 <= max_seconds <= 86400 or not 1024 <= token_budget <= 10_000_000:
@@ -197,19 +243,30 @@ def _analyze(session_id, model=None, endpoint=None, provider=None, max_batches=5
         raise ValueError("ID de análise inválido.")
     if provider == "api":
         from .ai_connection import connection
+
         base = connection()["endpoint"]
         if endpoint and endpoint.rstrip("/") != base:
             raise ValueError("Use o endereço da API configurada.")
         endpoint = base
     elif provider == "nvidia":
         from .config import NVIDIA_ENDPOINT
+
         if endpoint and endpoint.rstrip("/") != NVIDIA_ENDPOINT:
             raise ValueError("Endpoint NVIDIA deve ser o oficial.")
         endpoint = NVIDIA_ENDPOINT
     else:
-        endpoint = (endpoint or os.getenv("SISIFO_OLLAMA_URL", "http://localhost:11434")).rstrip("/")
+        endpoint = (endpoint or os.getenv("SISIFO_OLLAMA_URL", "http://localhost:11434")).rstrip(
+            "/"
+        )
         url = urlsplit(endpoint)
-        if url.scheme not in {"http", "https"} or not url.hostname or url.username or url.password or url.query or url.fragment:
+        if (
+            url.scheme not in {"http", "https"}
+            or not url.hostname
+            or url.username
+            or url.password
+            or url.query
+            or url.fragment
+        ):
             raise ValueError("Endpoint inválido.")
     analysis_id = resume_id or uuid4().hex
     analysis_root = (session_dir(session_id) / "analysis").resolve()
@@ -221,8 +278,16 @@ def _analyze(session_id, model=None, endpoint=None, provider=None, max_batches=5
     prior = None
     if resume_id:
         prior = json.loads((directory / "metadata.json").read_text(encoding="utf-8"))
-        if (prior.get("input_hash"), prior.get("provider"), prior.get("requested_model"), prior.get("endpoint"), prior.get("prompt_version")) != (input_hash, provider, model, endpoint, 4):
-            raise ValueError("Retomada recusada: entrada, provedor, endpoint, modelo ou prompt mudou.")
+        if (
+            prior.get("input_hash"),
+            prior.get("provider"),
+            prior.get("requested_model"),
+            prior.get("endpoint"),
+            prior.get("prompt_version"),
+        ) != (input_hash, provider, model, endpoint, 4):
+            raise ValueError(
+                "Retomada recusada: entrada, provedor, endpoint, modelo ou prompt mudou."
+            )
     else:
         atomic_write(directory / "input.json", json.dumps(plan, ensure_ascii=False, indent=2))
     meta = {
@@ -233,7 +298,11 @@ def _analyze(session_id, model=None, endpoint=None, provider=None, max_batches=5
         "input_hash": input_hash,
         "endpoint": endpoint,
         "review_status": "pending_human_review",
-        "budget": {"limit": token_budget, "reserved_units": 0, "method": "utf8_bytes_plus_output_ceiling; not exact billing"},
+        "budget": {
+            "limit": token_budget,
+            "reserved_units": 0,
+            "method": "utf8_bytes_plus_output_ceiling; not exact billing",
+        },
         "system_prompt": SYSTEM,
         "created_at": utcnow().isoformat(),
         "status": "running",
@@ -266,9 +335,15 @@ def _analyze(session_id, model=None, endpoint=None, provider=None, max_batches=5
         for index, evidence in enumerate(plan["batches"][:max_batches], 1):
             data = {k: v for k, v in plan.items() if k != "batches"}
             data.update(evidence=evidence, batch=index)
-            control.progress(f"Análise {analysis_id}: lote {index}/{len(plan['batches'])}",
-                             {"analysis_id": analysis_id, "path": str(directory / "report.md")})
-            previous = next((b for b in prior.get("batches", []) if b["index"] == index), None) if prior else None
+            control.progress(
+                f"Análise {analysis_id}: lote {index}/{len(plan['batches'])}",
+                {"analysis_id": analysis_id, "path": str(directory / "report.md")},
+            )
+            previous = (
+                next((b for b in prior.get("batches", []) if b["index"] == index), None)
+                if prior
+                else None
+            )
             validated_path = directory / f"batch-{index}-validated.json"
             if previous and not validated_path.is_file():
                 raise ValueError("Lote salvo ausente; retomada recusada para evitar nova cobrança.")
@@ -279,7 +354,13 @@ def _analyze(session_id, model=None, endpoint=None, provider=None, max_batches=5
                 response = validate_response(content, evidence)
                 info = {k: v for k, v in previous.items() if k not in {"index", "evidence_ids"}}
             else:
-                reserve = len(json.dumps(data, ensure_ascii=False).encode()) + len(SYSTEM.encode()) + len(json.dumps(AIResponse.model_json_schema()).encode()) + 8192 + 512
+                reserve = (
+                    len(json.dumps(data, ensure_ascii=False).encode())
+                    + len(SYSTEM.encode())
+                    + len(json.dumps(AIResponse.model_json_schema()).encode())
+                    + 8192
+                    + 512
+                )
                 # Each request may retry up to three times. Reserve before network I/O.
                 if meta["budget"]["reserved_units"] + reserve * 3 > token_budget:
                     raise BudgetExceeded("Orçamento conservador da análise atingido.")
@@ -296,8 +377,14 @@ def _analyze(session_id, model=None, endpoint=None, provider=None, max_batches=5
             )
             meta["batches"] = [b for b in meta["batches"] if b["index"] != index]
             meta["batches"].append(
-                {"index": index, "evidence_ids": response.reviewed_evidence_ids, **info,
-                 "validated_sha256": hashlib.sha256(response.model_dump_json(indent=2).encode()).hexdigest()}
+                {
+                    "index": index,
+                    "evidence_ids": response.reviewed_evidence_ids,
+                    **info,
+                    "validated_sha256": hashlib.sha256(
+                        response.model_dump_json(indent=2).encode()
+                    ).hexdigest(),
+                }
             )
             meta["coverage"]["included"] = sum(len(b["evidence_ids"]) for b in meta["batches"])
             meta["coverage"]["omitted"] = plan["coverage"]["total"] - meta["coverage"]["included"]
@@ -324,7 +411,9 @@ def _analyze(session_id, model=None, endpoint=None, provider=None, max_batches=5
     except Exception as error:
         meta["status"] = "partial" if responses else "failed"
         meta["error"] = (
-            redact(str(error))[0] if isinstance(error, ValueError) else "Falha interna ao analisar lote."
+            redact(str(error))[0]
+            if isinstance(error, ValueError)
+            else "Falha interna ao analisar lote."
         )
         raise ValueError(
             f"Análise {analysis_id} falhou: {meta['error']} Relatório determinístico preservado."
@@ -332,11 +421,17 @@ def _analyze(session_id, model=None, endpoint=None, provider=None, max_batches=5
     finally:
         responses = []
         valid_batches = []
-        lines = ["# Análise por IA — requer revisão humana", "",
-                 "Validação estrutural e de referências não garante correção factual.", ""]
+        lines = [
+            "# Análise por IA — requer revisão humana",
+            "",
+            "Validação estrutural e de referências não garante correção factual.",
+            "",
+        ]
         for batch in sorted(meta["batches"], key=lambda b: b["index"]):
             try:
-                saved = (directory / f"batch-{batch['index']}-validated.json").read_text(encoding="utf-8")
+                saved = (directory / f"batch-{batch['index']}-validated.json").read_text(
+                    encoding="utf-8"
+                )
                 if hashlib.sha256(saved.encode()).hexdigest() != batch["validated_sha256"]:
                     continue
                 response = validate_response(saved, plan["batches"][batch["index"] - 1])
@@ -346,21 +441,28 @@ def _analyze(session_id, model=None, endpoint=None, provider=None, max_batches=5
             responses.append(response.model_dump(mode="json"))
             lines += [f"## Lote {batch['index']}", "", plain(response.summary), ""]
             for item in response.recommendations:
-                lines += ["### Evidências: " + ", ".join(item.evidence_ids), "",
-                          "Tipo: " + item.claim_type,
-                          "Observação: " + plain(item.observation),
-                          "Interpretação da IA — a validar: " + plain(item.assessment),
-                          *["- " + plain(x) for x in item.measures],
-                          "Verificação: " + plain(item.verification),
-                          "Confiança declarada: " + item.confidence,
-                          "Evidências ausentes: " + "; ".join(plain(x) for x in item.missing_evidence), ""]
+                lines += [
+                    "### Evidências: " + ", ".join(item.evidence_ids),
+                    "",
+                    "Tipo: " + item.claim_type,
+                    "Observação: " + plain(item.observation),
+                    "Interpretação da IA — a validar: " + plain(item.assessment),
+                    *["- " + plain(x) for x in item.measures],
+                    "Verificação: " + plain(item.verification),
+                    "Confiança declarada: " + item.confidence,
+                    "Evidências ausentes: " + "; ".join(plain(x) for x in item.missing_evidence),
+                    "",
+                ]
             lines += ["Limitações:", *["- " + plain(x) for x in response.limitations], ""]
         # Preserve the journal of damaged/missing batches so a subsequent resume
         # cannot silently send them again. Coverage counts only intact results.
         meta["coverage"]["included"] = sum(len(b["evidence_ids"]) for b in valid_batches)
         meta["coverage"]["omitted"] = plan["coverage"]["total"] - meta["coverage"]["included"]
         if not plan["batches"]:
-            lines += ["Nenhuma evidência normalizada: a API não foi consultada. Isso não comprova segurança.", ""]
+            lines += [
+                "Nenhuma evidência normalizada: a API não foi consultada. Isso não comprova segurança.",
+                "",
+            ]
         meta["finished_at"] = utcnow().isoformat()
         save_meta()
         atomic_write(
@@ -373,7 +475,9 @@ def _analyze(session_id, model=None, endpoint=None, provider=None, max_batches=5
         if meta.get("error"):
             lines += ["Análise interrompida: " + plain(meta["error"])]
         consolidated = consolidate(responses)
-        atomic_write(directory / "consolidated.json", json.dumps(consolidated, ensure_ascii=False, indent=2))
+        atomic_write(
+            directory / "consolidated.json", json.dumps(consolidated, ensure_ascii=False, indent=2)
+        )
         atomic_write(directory / "report.md", "\n".join(lines) + "\n")
     return {
         "analysis_id": analysis_id,
@@ -392,16 +496,31 @@ def consolidate(responses):
     claims = {}
     for batch in responses:
         for item in batch["recommendations"]:
-            key = json.dumps([item["assessment"], item["measures"], item["verification"]], sort_keys=True)
+            key = json.dumps(
+                [item["assessment"], item["measures"], item["verification"]], sort_keys=True
+            )
             if key not in grouped:
-                grouped[key] = {**item, "evidence_ids": list(item["evidence_ids"]), "review_status": "pending"}
+                grouped[key] = {
+                    **item,
+                    "evidence_ids": list(item["evidence_ids"]),
+                    "review_status": "pending",
+                }
             else:
-                grouped[key]["evidence_ids"] = sorted(set(grouped[key]["evidence_ids"] + item["evidence_ids"]))
+                grouped[key]["evidence_ids"] = sorted(
+                    set(grouped[key]["evidence_ids"] + item["evidence_ids"])
+                )
             for eid in item["evidence_ids"]:
                 claims.setdefault(eid, set()).add(item["assessment"])
-    return {"recommendations": list(grouped.values()),
-            "possible_conflicts": [{"evidence_id": eid, "assessments": sorted(values)}
-                                   for eid, values in claims.items() if len(values) > 1],
-            "review_status": "pending_human_review",
-            "limitations": ["Agrupamento determinístico; divergências não comprovam contradição.",
-                            "Referências e citações válidas não comprovam conclusões factuais."]}
+    return {
+        "recommendations": list(grouped.values()),
+        "possible_conflicts": [
+            {"evidence_id": eid, "assessments": sorted(values)}
+            for eid, values in claims.items()
+            if len(values) > 1
+        ],
+        "review_status": "pending_human_review",
+        "limitations": [
+            "Agrupamento determinístico; divergências não comprovam contradição.",
+            "Referências e citações válidas não comprovam conclusões factuais.",
+        ],
+    }

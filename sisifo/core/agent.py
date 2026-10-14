@@ -38,7 +38,10 @@ class Step(BaseModel):
 
     @model_validator(mode="after")
     def arguments(self):
-        if self.tool in {"verify_session", "build_report", "analyze_session"} and not self.session_id:
+        if (
+            self.tool in {"verify_session", "build_report", "analyze_session"}
+            and not self.session_id
+        ):
             raise ValueError("A etapa requer ID de sessão explícito.")
         if self.tool in {"scan", "osint"} and not self.target:
             raise ValueError("A etapa requer alvo explícito.")
@@ -49,7 +52,8 @@ class Step(BaseModel):
     @property
     def external(self):
         return self.tool in {"scan", "osint"} or (
-            self.tool == "analyze_session" and self.provider != "export")
+            self.tool == "analyze_session" and self.provider != "export"
+        )
 
 
 class Plan(BaseModel):
@@ -95,26 +99,42 @@ def save_plan(plan):
     directory = plan_directory(plan_id)
     directory.mkdir(parents=True)
     store.atomic_write(directory / "plan.json", plan.model_dump_json(indent=2))
-    store.atomic_write(directory / "state.json", json.dumps({
-        "id": plan_id, "digest": digest(plan), "status": "planned", "steps": [],
-        "review_status": "pending_human_review", "token_units_reserved": 0,
-    }, indent=2))
+    store.atomic_write(
+        directory / "state.json",
+        json.dumps(
+            {
+                "id": plan_id,
+                "digest": digest(plan),
+                "status": "planned",
+                "steps": [],
+                "review_status": "pending_human_review",
+                "token_units_reserved": 0,
+            },
+            indent=2,
+        ),
+    )
     return plan_id
 
 
 def review_plan(session_id, provider="export", model=None):
     store.verified_findings(store.load_session(session_id))
-    return save_plan(Plan(
-        objective="Revisar evidências, gerar relatório e análise assistida",
-        allowed_sessions=[session_id],
-        steps=[Step(tool="verify_session", session_id=session_id),
-               Step(tool="build_report", session_id=session_id),
-               Step(tool="analyze_session", session_id=session_id, provider=provider, model=model)],
-    ))
+    return save_plan(
+        Plan(
+            objective="Revisar evidências, gerar relatório e análise assistida",
+            allowed_sessions=[session_id],
+            steps=[
+                Step(tool="verify_session", session_id=session_id),
+                Step(tool="build_report", session_id=session_id),
+                Step(tool="analyze_session", session_id=session_id, provider=provider, model=model),
+            ],
+        )
+    )
 
 
 def load_plan(plan_id):
-    return Plan.model_validate_json((plan_directory(plan_id) / "plan.json").read_text(encoding="utf-8"))
+    return Plan.model_validate_json(
+        (plan_directory(plan_id) / "plan.json").read_text(encoding="utf-8")
+    )
 
 
 def validate_step(step):
@@ -122,11 +142,13 @@ def validate_step(step):
         store.verified_findings(store.load_session(step.session_id))
     if step.tool == "scan":
         from .modules import select_modules, target_for
+
         for module in select_modules(step.modules):
             module.command(target_for(module, step.target))
     elif step.tool == "osint":
         from sisifo.osint.contract import QueryType
         from sisifo.osint.registry import get_connector
+
         connector = get_connector(step.connector)
         qt = QueryType(step.query_type)
         if qt not in connector.meta.query_types or not connector.validate_query(step.target, qt):
@@ -139,20 +161,39 @@ def execute_step(step, control, token_budget):
         return {"count": len(store.verified_findings(store.load_session(step.session_id)))}
     if step.tool == "build_report":
         report = build_report(step.session_id)
-        return {"session_id": step.session_id, "count": len(report["findings"]),
-                "path": str(store.session_dir(step.session_id) / "reports/report.md")}
+        return {
+            "session_id": step.session_id,
+            "count": len(report["findings"]),
+            "path": str(store.session_dir(step.session_id) / "reports/report.md"),
+        }
     if step.tool == "analyze_session":
-        return analyze_session(step.session_id, model=step.model, provider=step.provider,
-                               token_budget=token_budget, control=control)
+        return analyze_session(
+            step.session_id,
+            model=step.model,
+            provider=step.provider,
+            token_budget=token_budget,
+            control=control,
+        )
     if step.tool == "scan":
         from .orchestrator import scan
+
         result = scan(step.target, step.modules, "agent", step.timeout, control=control)
         return {"session_id": result.id, "status": result.status}
     from sisifo.osint.contract import QueryType
     from sisifo.osint.executor import load_osint_config, run_query
     from sisifo.osint.registry import get_connector
-    return {"results": [r.model_dump() for r in run_query(get_connector(step.connector),
-            step.target, QueryType(step.query_type), load_osint_config(step.connector))]}
+
+    return {
+        "results": [
+            r.model_dump()
+            for r in run_query(
+                get_connector(step.connector),
+                step.target,
+                QueryType(step.query_type),
+                load_osint_config(step.connector),
+            )
+        ]
+    }
 
 
 def run_plan(plan_id, *, approved_digest=None, control=None):
@@ -168,7 +209,9 @@ def run_plan(plan_id, *, approved_digest=None, control=None):
         if any(s.get("status") == "running" for s in state["steps"]):
             state["status"] = "interrupted"
             store.atomic_write(directory / "state.json", json.dumps(state, indent=2))
-            raise ValueError("Etapa interrompida: revise resultados e crie novo plano; ação não repetida.")
+            raise ValueError(
+                "Etapa interrompida: revise resultados e crie novo plano; ação não repetida."
+            )
         if any(step.external for step in plan.steps) and approved_digest != fingerprint:
             raise ValueError("Ações externas exigem aprovação do hash exato do plano.")
         control = control or Control(plan.max_seconds)
@@ -176,7 +219,9 @@ def run_plan(plan_id, *, approved_digest=None, control=None):
         state.update(status="running", approved_digest=approved_digest)
 
         def save():
-            store.atomic_write(directory / "state.json", json.dumps(state, ensure_ascii=False, indent=2))
+            store.atomic_write(
+                directory / "state.json", json.dumps(state, ensure_ascii=False, indent=2)
+            )
 
         try:
             for index, step in enumerate(plan.steps):

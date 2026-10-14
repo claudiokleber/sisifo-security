@@ -90,7 +90,9 @@ def test_hibp_validate_query():
     assert conn.validate_query("user@", QueryType.EMAIL) is False  # empty domain
     assert conn.validate_query("user@.com", QueryType.EMAIL) is False  # invalid domain
     assert conn.validate_query("user name@domain.com", QueryType.EMAIL) is False  # space in local
-    assert conn.validate_query("a" * 65 + "@example.com", QueryType.EMAIL) is False  # local too long
+    assert (
+        conn.validate_query("a" * 65 + "@example.com", QueryType.EMAIL) is False
+    )  # local too long
     assert conn.validate_query("test@" + "x" * 255, QueryType.EMAIL) is False  # domain too long
     assert conn.validate_query("test\x00@example.com", QueryType.EMAIL) is False  # control char
 
@@ -134,7 +136,9 @@ async def test_hibp_query_with_transport_success():
     ]
     transport.execute_http_query = AsyncMock(return_value=mock_response)
 
-    results = await conn.query_with_transport("test@example.com", QueryType.EMAIL, config, transport)
+    results = await conn.query_with_transport(
+        "test@example.com", QueryType.EMAIL, config, transport
+    )
 
     assert len(results) == 1
     assert results[0]["Name"] == "Adobe"
@@ -153,10 +157,15 @@ async def test_hibp_query_with_transport_no_breaches():
 
     transport = AsyncMock()
     transport.execute_http_query = AsyncMock(
-        side_effect=OsintExecutionError("Serviço retornou HTTP 404", code="HTTP_ERROR", details={"status_code": 404})
+        side_effect=OsintExecutionError(
+            "Serviço retornou HTTP 404", code="HTTP_ERROR", details={"status_code": 404}
+        )
     )
 
-    assert await conn.query_with_transport("clean@example.com", QueryType.EMAIL, config, transport) == []
+    assert (
+        await conn.query_with_transport("clean@example.com", QueryType.EMAIL, config, transport)
+        == []
+    )
 
 
 @pytest.mark.asyncio
@@ -167,7 +176,9 @@ async def test_hibp_query_with_transport_auth_error():
 
     transport = AsyncMock()
     transport.execute_http_query = AsyncMock(
-        side_effect=OsintExecutionError("Serviço retornou HTTP 401", code="HTTP_ERROR", details={"status_code": 401})
+        side_effect=OsintExecutionError(
+            "Serviço retornou HTTP 401", code="HTTP_ERROR", details={"status_code": 401}
+        )
     )
 
     with pytest.raises(OsintExecutionError) as exc_info:
@@ -184,7 +195,9 @@ async def test_hibp_query_with_transport_forbidden():
 
     transport = AsyncMock()
     transport.execute_http_query = AsyncMock(
-        side_effect=OsintExecutionError("Serviço retornou HTTP 403", code="HTTP_ERROR", details={"status_code": 403})
+        side_effect=OsintExecutionError(
+            "Serviço retornou HTTP 403", code="HTTP_ERROR", details={"status_code": 403}
+        )
     )
 
     with pytest.raises(OsintExecutionError) as exc_info:
@@ -201,7 +214,9 @@ async def test_hibp_query_with_transport_rate_limit():
 
     transport = AsyncMock()
     transport.execute_http_query = AsyncMock(
-        side_effect=OsintExecutionError("Serviço retornou HTTP 429", code="HTTP_ERROR", details={"status_code": 429})
+        side_effect=OsintExecutionError(
+            "Serviço retornou HTTP 429", code="HTTP_ERROR", details={"status_code": 429}
+        )
     )
 
     with pytest.raises(OsintExecutionError) as exc_info:
@@ -214,7 +229,9 @@ async def test_hibp_query_with_transport_rate_limit():
 async def test_hibp_query_with_transport_not_found_other_endpoint():
     """Test 404 on other endpoints raises NOT_FOUND."""
     conn = HibpConnector()
-    error = OsintExecutionError("Mensagem sem status", code="HTTP_ERROR", details={"status_code": 404})
+    error = OsintExecutionError(
+        "Mensagem sem status", code="HTTP_ERROR", details={"status_code": 404}
+    )
     assert conn._map_hibp_error(error, "breach").code == "NOT_FOUND"
 
 
@@ -262,7 +279,7 @@ def test_hibp_normalize():
             "IsMalware": False,
             "IsStealerLog": False,
             "Attribution": None,
-        }
+        },
     ]
 
     results = conn.normalize(raw, original_query="test@example.com")
@@ -384,7 +401,7 @@ def test_hibp_normalize_with_warnings():
             "IsMalware": False,
             "IsStealerLog": True,
             "Attribution": "Unknown",
-        }
+        },
     ]
 
     results = conn.normalize(raw)
@@ -415,11 +432,26 @@ def test_hibp_normalize_invalid_input():
     assert exc_info.value.code == "INVALID_RAW_DATA"
 
     # Malformed entries must not disappear as a successful empty result
-    raw = ["not a dict", 123, {"Name": "Valid", "Title": "Valid", "Domain": "valid.com",
-                                "BreachDate": "2020-01-01", "AddedDate": "2020-01-02T00:00:00Z",
-                                "PwnCount": 100, "Description": "Valid", "DataClasses": ["Email"],
-                                "IsVerified": True, "IsFabricated": False, "IsSensitive": False,
-                                "IsRetired": False, "IsSpamList": False, "IsMalware": False}]
+    raw = [
+        "not a dict",
+        123,
+        {
+            "Name": "Valid",
+            "Title": "Valid",
+            "Domain": "valid.com",
+            "BreachDate": "2020-01-01",
+            "AddedDate": "2020-01-02T00:00:00Z",
+            "PwnCount": 100,
+            "Description": "Valid",
+            "DataClasses": ["Email"],
+            "IsVerified": True,
+            "IsFabricated": False,
+            "IsSensitive": False,
+            "IsRetired": False,
+            "IsSpamList": False,
+            "IsMalware": False,
+        },
+    ]
     with pytest.raises(OsintExecutionError, match="Item HIBP"):
         conn.normalize(raw, original_query="test@example.com")
 
@@ -434,11 +466,22 @@ def test_hibp_normalize_missing_name():
 
     raw = [
         {"Title": "No Name", "Domain": "test.com"},  # Missing Name
-        {"Name": "Valid", "Title": "Valid", "Domain": "valid.com",
-         "BreachDate": "2020-01-01", "AddedDate": "2020-01-02T00:00:00Z",
-         "PwnCount": 100, "Description": "Valid", "DataClasses": ["Email"],
-         "IsVerified": True, "IsFabricated": False, "IsSensitive": False,
-         "IsRetired": False, "IsSpamList": False, "IsMalware": False},
+        {
+            "Name": "Valid",
+            "Title": "Valid",
+            "Domain": "valid.com",
+            "BreachDate": "2020-01-01",
+            "AddedDate": "2020-01-02T00:00:00Z",
+            "PwnCount": 100,
+            "Description": "Valid",
+            "DataClasses": ["Email"],
+            "IsVerified": True,
+            "IsFabricated": False,
+            "IsSensitive": False,
+            "IsRetired": False,
+            "IsSpamList": False,
+            "IsMalware": False,
+        },
     ]
     with pytest.raises(OsintExecutionError, match="Nome"):
         conn.normalize(raw, original_query="test@example.com")
@@ -492,16 +535,20 @@ async def test_hibp_query_cancellation():
     config = {"api_key": "a" * 32}
 
     transport = AsyncMock()
+
     # Simulate a slow response
     async def slow_response(*args, **kwargs):
         await asyncio.sleep(10)
         return MagicMock()
+
     transport.execute_http_query = slow_response
 
     control = Control(seconds=1)  # 1 second timeout
 
     with pytest.raises(BudgetExceeded):
-        await conn.query_with_transport("test@example.com", QueryType.EMAIL, config, transport, control)
+        await conn.query_with_transport(
+            "test@example.com", QueryType.EMAIL, config, transport, control
+        )
 
 
 @pytest.mark.asyncio
@@ -525,7 +572,9 @@ async def test_hibp_retry_after_cancellation():
             mock_resp.status_code = 429
             mock_resp.headers = {"Retry-After": "60"}
             mock_resp.aiter_bytes = AsyncMock(return_value=iter([b""]))
-            raise OsintExecutionError("Serviço retornou HTTP 429", code="HTTP_ERROR", details={"status_code": 429})
+            raise OsintExecutionError(
+                "Serviço retornou HTTP 429", code="HTTP_ERROR", details={"status_code": 429}
+            )
         # Second call succeeds
         mock_resp = MagicMock()
         mock_resp.json.return_value = []
@@ -537,11 +586,16 @@ async def test_hibp_retry_after_cancellation():
     control = Control(seconds=1)  # Timeout before retry
 
     with pytest.raises(OsintExecutionError) as exc_info:
-        await conn.query_with_transport("test@example.com", QueryType.EMAIL, config, transport, control)
+        await conn.query_with_transport(
+            "test@example.com", QueryType.EMAIL, config, transport, control
+        )
 
     assert exc_info.value.code in ("CANCELLED", "QUERY_EXECUTION_FAILED", "RATE_LIMIT_EXCEEDED")
 
+
 def test_breach_date_without_added_timestamp():
-    result = HibpConnector().normalize([{'Name': 'Synthetic', 'BreachDate': '2024-01-01'}], 'test@example.com')[0]
+    result = HibpConnector().normalize(
+        [{"Name": "Synthetic", "BreachDate": "2024-01-01"}], "test@example.com"
+    )[0]
     assert result.original_timestamp is None
-    assert result.evidence['hibp_breach_date'] == '2024-01-01'
+    assert result.evidence["hibp_breach_date"] == "2024-01-01"

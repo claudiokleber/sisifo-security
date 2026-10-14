@@ -7,7 +7,9 @@ from sisifo.core.modules import select_modules
 
 console = Console(markup=False)
 
-app = typer.Typer(help="Diagnóstico de dependências e imagens.", no_args_is_help=True, invoke_without_command=True)
+app = typer.Typer(
+    help="Diagnóstico de dependências e imagens.", no_args_is_help=True, invoke_without_command=True
+)
 
 
 @app.callback(invoke_without_command=True)

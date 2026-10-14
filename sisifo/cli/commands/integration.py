@@ -37,7 +37,9 @@ def list_cmd(
     integrations = catalog.list(status=status_filter, category=category_filter)
 
     if json_output:
-        console.print(json.dumps([i.model_dump() for i in integrations], ensure_ascii=False, indent=2))
+        console.print(
+            json.dumps([i.model_dump() for i in integrations], ensure_ascii=False, indent=2)
+        )
         return
 
     if not integrations:
@@ -89,9 +91,13 @@ def show_cmd(
     console.print(f"[cyan]Versão:[/cyan] {meta.version}")
     console.print(f"[cyan]Descrição:[/cyan] {meta.description}")
     console.print(f"[cyan]Ponto de entrada:[/cyan] {meta.entry_point}")
-    console.print(f"[cyan]Dependências:[/cyan] {', '.join(meta.dependencies) if meta.dependencies else 'nenhuma'}")
+    console.print(
+        f"[cyan]Dependências:[/cyan] {', '.join(meta.dependencies) if meta.dependencies else 'nenhuma'}"
+    )
     console.print(f"[cyan]Ambientes suportados:[/cyan] {', '.join(meta.supported_environments)}")
-    console.print(f"[cyan]Limites de execução:[/cyan] {json.dumps(meta.execution_limits, ensure_ascii=False, indent=2)}")
+    console.print(
+        f"[cyan]Limites de execução:[/cyan] {json.dumps(meta.execution_limits, ensure_ascii=False, indent=2)}"
+    )
     console.print(f"[cyan]URL da documentação:[/cyan] {meta.documentation_url or 'não disponível'}")
     console.print(f"[cyan]Criado em:[/cyan] {meta.created_at}")
     console.print(f"[cyan]Atualizado em:[/cyan] {meta.updated_at}")

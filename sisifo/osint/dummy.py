@@ -14,7 +14,7 @@ from sisifo.osint.contract import (
 
 class DummyConnector(BaseConnector):
     simulated = True
-    ai_evidence_fields = frozenset({'simulated', 'query_type', 'domain', 'ip'})
+    ai_evidence_fields = frozenset({"simulated", "query_type", "domain", "ip"})
     meta = ConnectorMeta(
         id="dummy",
         name="Dummy Connector",
@@ -37,10 +37,20 @@ class DummyConnector(BaseConnector):
 
     def diagnose(self, config: Dict[str, Any]) -> Dict[str, Any]:
         if not self.validate_config(config):
-            return {"ok": False, "reason": "api_key ausente ou inválida", "will_call_external": False}
-        return {"ok": True, "detail": "Configuração válida (simulado).", "will_call_external": False}
+            return {
+                "ok": False,
+                "reason": "api_key ausente ou inválida",
+                "will_call_external": False,
+            }
+        return {
+            "ok": True,
+            "detail": "Configuração válida (simulado).",
+            "will_call_external": False,
+        }
 
-    def query(self, query: str, query_type: QueryType, config: Dict[str, Any]) -> List[ConnectorResult]:
+    def query(
+        self, query: str, query_type: QueryType, config: Dict[str, Any]
+    ) -> List[ConnectorResult]:
         if not self.validate_config(config):
             raise ValueError("Configuração inválida")
         if not self.validate_query(query, query_type):

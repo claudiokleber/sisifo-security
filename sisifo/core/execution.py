@@ -48,9 +48,11 @@ def file_lock(path):
         try:
             if os.name == "nt":
                 import msvcrt
+
                 msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
             else:
                 import fcntl
+
                 fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
             raise ValueError("Operação já possui um executor ativo.") from None
@@ -79,4 +81,3 @@ async def controlled(awaitable, control):
         if not task.done():
             task.cancel()
         await asyncio.gather(task, return_exceptions=True)
-

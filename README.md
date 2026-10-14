@@ -369,3 +369,12 @@ O terminal guia a consulta e permite selecionar resultados para interpretação 
 com prévia sanitizada e confirmação separada. A aba OSINT oferece o mesmo fluxo.
 Use `sisifo osint config hibp` para configurar a chave e `sisifo osint --help` para opções.
 [Contrato, rotas e limitações](docs/OSINT-INTEGRACOES.md).
+
+## Estado da validação — 2026-10-12
+
+Artefatos locais registram **286 testes convencionais e 11 E2E aprovados**.
+Os E2E usam Chromium com HTTP externo simulado; não homologam HIBP/IA reais.
+A [CI do commit 11adfe59](https://github.com/claudiokleber/sisifo-security/actions/runs/38088423076) passou nos jobs unitários,
+rede e instalação nativa, mas **não contém browser-e2e nem valida as alterações locais posteriores**.
+As execuções E2E anteriores sem artefatos permanecem classificadas como relatadas.
+Consulte [evidências, comandos e pendências](docs/OSINT-VALIDACAO.md).

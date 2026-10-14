@@ -61,9 +61,16 @@ def reply(evidence):
 def test_setup_hides_key_and_preserves_local_only_files(tmp_path, monkeypatch):
     key = "nvapi-synthetic-test-key"
     from sisifo.core import ai_connection
-    monkeypatch.setattr(ai_connection, "request", lambda endpoint, path, key, body=None, control=None:
-        {"data": [{"id": "test-model"}]} if path == "/models" else
-        {"choices": [{"finish_reason": "stop", "message": {"content": "OK"}}]})
+
+    monkeypatch.setattr(
+        ai_connection,
+        "request",
+        lambda endpoint, path, key, body=None, control=None: (
+            {"data": [{"id": "test-model"}]}
+            if path == "/models"
+            else {"choices": [{"finish_reason": "stop", "message": {"content": "OK"}}]}
+        ),
+    )
     result = CliRunner().invoke(app, ["setup"], input=f"1\nhttps://api.example/v1\n{key}\n1\ny\n")
     assert result.exit_code == 0, result.output
     assert key not in result.output

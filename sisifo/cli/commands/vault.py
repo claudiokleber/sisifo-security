@@ -7,7 +7,10 @@ from sisifo.core.vault import export_vault as export
 
 console = Console(markup=False)
 
-app = typer.Typer(help="Exportar resumo para um vault existente, sem sobrescrever notas editadas.", no_args_is_help=True)
+app = typer.Typer(
+    help="Exportar resumo para um vault existente, sem sobrescrever notas editadas.",
+    no_args_is_help=True,
+)
 
 
 @app.callback(invoke_without_command=True)

@@ -8,7 +8,9 @@ from sisifo.core.report import build_report
 
 console = Console(markup=False)
 
-app = typer.Typer(help="Importar XML do Nmap existente sem executar ferramentas.", no_args_is_help=True)
+app = typer.Typer(
+    help="Importar XML do Nmap existente sem executar ferramentas.", no_args_is_help=True
+)
 
 
 @app.callback(invoke_without_command=True)

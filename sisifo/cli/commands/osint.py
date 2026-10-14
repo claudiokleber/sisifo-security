@@ -33,7 +33,10 @@ class Confirm(RichConfirm):
 
 console = Console(markup=False)
 
-app = typer.Typer(help="OSINT: use sisifo osint terminal para consultas guiadas e interpretação com IA.", no_args_is_help=False)
+app = typer.Typer(
+    help="OSINT: use sisifo osint terminal para consultas guiadas e interpretação com IA.",
+    no_args_is_help=False,
+)
 
 
 def _list_connectors_detailed():
@@ -69,7 +72,9 @@ def _select_connector(conns: dict) -> Optional[str]:
         if choice.lower() in ("sair", "exit", "quit", "/sair", "0"):
             return None
         if choice.lower() in ("/ajuda", "/limpar", "/voltar"):
-            console.print("Escolha o ID do conector. /sair encerra; /voltar retorna; /limpar descarta a seleção. Após a consulta, selecione resultados para a IA.")
+            console.print(
+                "Escolha o ID do conector. /sair encerra; /voltar retorna; /limpar descarta a seleção. Após a consulta, selecione resultados para a IA."
+            )
             continue
         if choice in conns:
             return choice
@@ -129,7 +134,9 @@ def _get_query_value(query_type: QueryType) -> Optional[str]:
         if value.lower() in ("voltar", "back", "/voltar"):
             return "/voltar"
         if value.lower() in ("/ajuda", "/limpar"):
-            console.print("Informe a consulta; /voltar muda o conector; /sair encerra. Nenhuma consulta é enviada antes da confirmação.")
+            console.print(
+                "Informe a consulta; /voltar muda o conector; /sair encerra. Nenhuma consulta é enviada antes da confirmação."
+            )
             continue
         if value:
             return value
@@ -143,8 +150,12 @@ def _confirm_query(connector_name: str, query_type: str, query_value: str, conne
     console.print(f"  Serviço: {connector_name}")
     console.print(f"  Tipo: {query_type}")
     console.print(f"  Valor: {query_value}")
-    console.print(f"  Destino: {', '.join(connector.meta.allowed_destinations) if connector.meta.allowed_destinations else 'N/A'}")
-    console.print(f"  Credencial: {'Configurada' if connector.validate_config(load_service_config(f'osint_{connector.meta.id}')) else 'Não configurada'}")
+    console.print(
+        f"  Destino: {', '.join(connector.meta.allowed_destinations) if connector.meta.allowed_destinations else 'N/A'}"
+    )
+    console.print(
+        f"  Credencial: {'Configurada' if connector.validate_config(load_service_config(f'osint_{connector.meta.id}')) else 'Não configurada'}"
+    )
     console.print("=" * 60)
 
     return Confirm.ask("\nConfirmar execução desta consulta?")
@@ -153,36 +164,48 @@ def _confirm_query(connector_name: str, query_type: str, query_value: str, conne
 def _display_results(results: list, query_value: str):
     """Display query results in a user-friendly format."""
     if not results:
-        console.print(f"\nConsulta concluída. O conector não retornou ocorrências para {query_value}.")
-        console.print("Isso não garante ausência de exposição; a fonte consultada pode ter cobertura limitada.")
+        console.print(
+            f"\nConsulta concluída. O conector não retornou ocorrências para {query_value}."
+        )
+        console.print(
+            "Isso não garante ausência de exposição; a fonte consultada pode ter cobertura limitada."
+        )
         return
 
-    console.print(f"\nConsulta concluída. Foram encontradas {len(results)} ocorrência(s) para {query_value}.")
+    console.print(
+        f"\nConsulta concluída. Foram encontradas {len(results)} ocorrência(s) para {query_value}."
+    )
     console.print("Isso não confirma que sua senha atual esteja comprometida.\n")
 
     for i, r in enumerate(results, 1):
         ev = r.evidence
-        if r.source != 'hibp':
+        if r.source != "hibp":
             console.print(f"{i}. Fonte: {r.source}")
             console.print(json.dumps(ev, ensure_ascii=False, indent=2))
             for warning in r.warnings + r.limitations:
                 console.print(warning)
             continue
-        console.print(f"{i}. {ev.get('hibp_breach_name', 'Desconhecido')} ({ev.get('hibp_title', 'N/A')})")
+        console.print(
+            f"{i}. {ev.get('hibp_breach_name', 'Desconhecido')} ({ev.get('hibp_title', 'N/A')})"
+        )
         console.print(f"   Domínio: {ev.get('hibp_domain', 'N/A')}")
         console.print(f"   Data da violação: {ev.get('hibp_breach_date', 'N/A')}")
         console.print(f"   Adicionado ao HIBP: {ev.get('hibp_added_date', 'N/A')}")
-        console.print(f"   Contas afetadas: {ev.get('hibp_pwn_count', 'N/A'):,}" if ev.get('hibp_pwn_count') else "   Contas afetadas: N/A")
-        classes = ev.get('hibp_data_classes', [])
+        console.print(
+            f"   Contas afetadas: {ev.get('hibp_pwn_count', 'N/A'):,}"
+            if ev.get("hibp_pwn_count")
+            else "   Contas afetadas: N/A"
+        )
+        classes = ev.get("hibp_data_classes", [])
         if classes:
             console.print(f"   Classes de dados: {', '.join(classes)}")
-        if ev.get('hibp_is_sensitive'):
+        if ev.get("hibp_is_sensitive"):
             console.print("   [AVISO] Violação sensível - detalhes limitados")
-        if ev.get('hibp_is_fabricated'):
+        if ev.get("hibp_is_fabricated"):
             console.print("   [AVISO] Violação fabricada - pode não ser genuína")
-        if ev.get('hibp_is_retired'):
+        if ev.get("hibp_is_retired"):
             console.print("   [AVISO] Violação aposentada - dados removidos do HIBP")
-        if ev.get('hibp_is_malware') or ev.get('hibp_is_stealer_log'):
+        if ev.get("hibp_is_malware") or ev.get("hibp_is_stealer_log"):
             console.print("   [ALERTA] Violação de malware/stealer - credenciais roubadas")
         console.print(f"   Referência: {r.reference_url}")
         console.print()
@@ -191,7 +214,9 @@ def _display_results(results: list, query_value: str):
 def _interactive_loop():
     """Main interactive loop for OSINT queries."""
     console.print("\nSísifo — Verificação guiada de informações")
-    console.print("Passo 1: escolha um serviço. Passo 2: informe a consulta. Passo 3: revise antes de enviar.")
+    console.print(
+        "Passo 1: escolha um serviço. Passo 2: informe a consulta. Passo 3: revise antes de enviar."
+    )
     console.print("A IA é opcional; você pode consultar e ler os resultados sem ela.")
     console.print("Digite /ajuda para comandos, /sair para sair.\n")
 
@@ -305,11 +330,15 @@ def query_cmd(
         raise typer.BadParameter("Conector não configurado corretamente.")
     # Validate query type is supported by this connector
     if qt not in conn.meta.query_types:
-        raise typer.BadParameter(f"Conector {connector} não suporta tipo de consulta {qtype}. Suportados: {[t.value for t in conn.meta.query_types]}")
+        raise typer.BadParameter(
+            f"Conector {connector} não suporta tipo de consulta {qtype}. Suportados: {[t.value for t in conn.meta.query_types]}"
+        )
     try:
         results = run_query(conn, query, qt, cfg)
     except OsintExecutionError as error:
-        console.print(f"Consulta falhou: {error.code}. Confira configuração, limites e disponibilidade.")
+        console.print(
+            f"Consulta falhou: {error.code}. Confira configuração, limites e disponibilidade."
+        )
         raise typer.Exit(1) from None
     if not results:
         console.print("Nenhum resultado encontrado. Isso não comprova ausência de exposição.")
@@ -361,6 +390,7 @@ def config_cmd(
     save_service_config(f"osint_{connector}", cfg)
     console.print(f"Configuração de {connector} salva com sucesso.")
 
+
 @app.command("terminal")
 def terminal_cmd():
     """Abrir terminal OSINT: consulta guiada, resultados e interpretação opcional pela IA."""
@@ -371,20 +401,28 @@ def _offer_interpretation(results):
     if not results:
         return
     from sisifo.core.ai_connection import public_status
+
     status = public_status()
-    if not status.get('configured'):
-        console.print("Consulta disponível sem IA. Use sisifo setup para habilitar interpretação opcional.")
+    if not status.get("configured"):
+        console.print(
+            "Consulta disponível sem IA. Use sisifo setup para habilitar interpretação opcional."
+        )
         return
-    selection = Prompt.ask("Resultados para interpretar na IA (números separados por vírgula; Enter para voltar)", default="").strip()
-    if not selection or selection in ('/voltar', '/sair'):
+    selection = Prompt.ask(
+        "Resultados para interpretar na IA (números separados por vírgula; Enter para voltar)",
+        default="",
+    ).strip()
+    if not selection or selection in ("/voltar", "/sair"):
         return
     try:
-        indices = [int(x.strip()) - 1 for x in selection.split(',')]
+        indices = [int(x.strip()) - 1 for x in selection.split(",")]
         preview = ai_preview(results, indices)
         console.print("Prévia exata dos dados selecionados (e-mail da consulta omitido):")
         console.print(preview)
-        console.print(f"Destino: {status.get('endpoint', 'IA configurada')} | Modelo: {status.get('model', '')}")
+        console.print(
+            f"Destino: {status.get('endpoint', 'IA configurada')} | Modelo: {status.get('model', '')}"
+        )
         if Confirm.ask("Autorizar o envio desta prévia à IA?", default=False):
-            console.print(interpret(preview)['content'])
+            console.print(interpret(preview)["content"])
     except ValueError as error:
         console.print(str(error))

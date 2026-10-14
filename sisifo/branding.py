@@ -3,6 +3,7 @@
 Standard library only. Capabilities are checked at output time, not import.
 No stdout reconfiguration, background activity or filesystem writes on import.
 """
+
 from __future__ import annotations
 
 import itertools
@@ -47,7 +48,9 @@ def _text(value, stream):
     # Strip terminal controls supplied by external evidence, preserving line breaks.
     value = "".join(c for c in value if c in "\n\t" or unicodedata.category(c) != "Cc")
     if not _unicode(stream):
-        value = "".join(c for c in unicodedata.normalize("NFKD", value) if not unicodedata.combining(c))
+        value = "".join(
+            c for c in unicodedata.normalize("NFKD", value) if not unicodedata.combining(c)
+        )
         value = value.encode("ascii", "replace").decode()
     return value
 
@@ -58,6 +61,7 @@ def _color(stream):
     if os.name == "nt":
         try:
             import ctypes
+
             kernel = ctypes.windll.kernel32
             handle = kernel.GetStdHandle(-12 if stream is sys.stderr else -11)
             mode = ctypes.c_uint32()
@@ -74,7 +78,9 @@ def paint(text, rgb=WHITE, bold=False, *, stream=None):
     text = _text(text, stream)
     if not _color(stream):
         return text
-    truecolor = os.getenv("COLORTERM", "").lower() in {"truecolor", "24bit"} or "WT_SESSION" in os.environ
+    truecolor = (
+        os.getenv("COLORTERM", "").lower() in {"truecolor", "24bit"} or "WT_SESSION" in os.environ
+    )
     if truecolor:
         code = "38;2;" + ";".join(map(str, rgb))
     else:
@@ -83,8 +89,10 @@ def paint(text, rgb=WHITE, bold=False, *, stream=None):
 
 
 def visible_len(text):
-    return sum(0 if unicodedata.combining(c) else 2 if unicodedata.east_asian_width(c) in "WF" else 1
-               for c in _ANSI.sub("", text))
+    return sum(
+        0 if unicodedata.combining(c) else 2 if unicodedata.east_asian_width(c) in "WF" else 1
+        for c in _ANSI.sub("", text)
+    )
 
 
 def _width(stream):
@@ -116,8 +124,10 @@ def banner(version=None, tagline="Evidências, análise e investigação", *, st
     else:
         for i, line in enumerate(word):
             shade = tuple(round(255 + (107 - 255) * i / (len(word) - 1)) for _ in range(3))
-            art = "".join(paint(c, RED if c in "▓#" else GRAY if c in "·." else WHITE, stream=stream)
-                          for c in (hill[i] if i < len(hill) else ""))
+            art = "".join(
+                paint(c, RED if c in "▓#" else GRAY if c in "·." else WHITE, stream=stream)
+                for c in (hill[i] if i < len(hill) else "")
+            )
             print("  " + paint(line, shade, True, stream=stream) + "   " + art, file=stream)
     for line in _wrap(_text(f"{tagline} - v{version}", stream), _width(stream) - 2):
         print("  " + paint(line, GRAY, stream=stream), file=stream)
@@ -135,13 +145,22 @@ def panel(rows, title="", *, stream=None):
         first = key + " " * (key_width - visible_len(key)) + "  "
         for i, line in enumerate(_wrap(value, max(1, width - key_width - 2))):
             body.append((first if i == 0 else " " * (key_width + 2)) + line)
-    tl, tr, bl, br, h, v = ("╭", "╮", "╰", "╯", "─", "│") if _unicode(stream) else ("+", "+", "+", "+", "-", "|")
+    tl, tr, bl, br, h, v = (
+        ("╭", "╮", "╰", "╯", "─", "│") if _unicode(stream) else ("+", "+", "+", "+", "-", "|")
+    )
     title = _text(title, stream)
     if title:
         print(paint("  " + title, WHITE, True, stream=stream), file=stream)
     print(paint("  " + tl + h * (width + 2) + tr, GRAY, stream=stream), file=stream)
     for line in body:
-        print(paint("  " + v + " " + line + " " * (width - visible_len(line)) + " " + v, WHITE, stream=stream), file=stream)
+        print(
+            paint(
+                "  " + v + " " + line + " " * (width - visible_len(line)) + " " + v,
+                WHITE,
+                stream=stream,
+            ),
+            file=stream,
+        )
     print(paint("  " + bl + h * (width + 2) + br, GRAY, stream=stream), file=stream)
     print(file=stream)
 
@@ -149,13 +168,18 @@ def panel(rows, title="", *, stream=None):
 def menu(items, *, stream=None):
     stream = stream or sys.stdout
     for key, label in items:
-        print("  " + paint(key, RED, True, stream=stream) + "   " + _text(label, stream), file=stream)
+        print(
+            "  " + paint(key, RED, True, stream=stream) + "   " + _text(label, stream), file=stream
+        )
     print(file=stream)
 
 
 def prompt(options, default="0"):
     while True:
-        choice = input(_text(f"Escolha [{'/'.join(options)}] ({default}): ", sys.stdout)).strip() or default
+        choice = (
+            input(_text(f"Escolha [{'/'.join(options)}] ({default}): ", sys.stdout)).strip()
+            or default
+        )
         if choice in options:
             return choice
         warn("Opção inválida.")
@@ -168,7 +192,9 @@ def section(title, *, stream=None):
 
 def _message(symbol, message, rgb, stream):
     stream = stream or sys.stdout
-    print(paint(f"  [{symbol}]", rgb, True, stream=stream) + " " + _text(message, stream), file=stream)
+    print(
+        paint(f"  [{symbol}]", rgb, True, stream=stream) + " " + _text(message, stream), file=stream
+    )
 
 
 def ok(message, *, stream=None):
@@ -203,7 +229,7 @@ def climb(message="Coletando evidências", fps=8, *, stream=None):
 
     def spin():
         for pos in itertools.cycle(frames):
-            cells = ramp[:pos] + ("●" if _unicode(stream) else "O") + ramp[pos + 1:]
+            cells = ramp[:pos] + ("●" if _unicode(stream) else "O") + ramp[pos + 1 :]
             line = f"{cells}  {_text(message, stream)}  {time.monotonic() - started:.0f}s"
             stream.write("\r\x1b[2K" + paint(line, WHITE, stream=stream))
             stream.flush()
@@ -231,8 +257,11 @@ def progress(done, total, label="", width=24, *, stream=None):
     width = min(max(1, width), max(1, _width(stream) - 15))
     count = round(fraction * width)
     on, off = ("━", "─") if _unicode(stream) else ("#", "-")
-    print(paint(on * count + off * (width - count), WHITE, stream=stream) +
-          _text(f" {fraction:.0%} {label}", stream), file=stream)
+    print(
+        paint(on * count + off * (width - count), WHITE, stream=stream)
+        + _text(f" {fraction:.0%} {label}", stream),
+        file=stream,
+    )
 
 
 def _demo():
@@ -247,10 +276,37 @@ def _demo():
         time.sleep(1)
     progress(1, 1, "Concluído")
 
-_WORDMARK = ['███████╗ ██╗ ███████╗ ██╗ ███████╗  ██████╗ ', '██╔════╝ ██║ ██╔════╝ ██║ ██╔════╝ ██╔═══██╗', '███████╗ ██║ ███████╗ ██║ █████╗   ██║   ██║', '╚════██║ ██║ ╚════██║ ██║ ██╔══╝   ██║   ██║', '███████║ ██║ ███████║ ██║ ██║      ╚██████╔╝', '╚══════╝ ╚═╝ ╚══════╝ ╚═╝ ╚═╝       ╚═════╝ ']
-_HILL = ['       ▄▄▄▄           ', '      ▐██▓▓▌ ·  ·  ·  ', '      ▐██▓▓▌          ', '    ╱  ▀▀▀▀           ', '  ╱                   ', '╱                     ']
-_WORDMARK_ASCII = [' SSSS  III  SSSS  III  FFFFF   OOO  ', 'S       I  S       I   F      O   O ', ' SSS    I   SSS    I   FFF    O   O ', '    S   I      S   I   F      O   O ', 'SSSS   III SSSS   III  F       OOO  ']
-_HILL_ASCII = ['     .--.        ', '    ( ## )  . . .', "   / '--'        ", '  /              ', ' /               ']
 
-if __name__ == '__main__':
+_WORDMARK = [
+    "███████╗ ██╗ ███████╗ ██╗ ███████╗  ██████╗ ",
+    "██╔════╝ ██║ ██╔════╝ ██║ ██╔════╝ ██╔═══██╗",
+    "███████╗ ██║ ███████╗ ██║ █████╗   ██║   ██║",
+    "╚════██║ ██║ ╚════██║ ██║ ██╔══╝   ██║   ██║",
+    "███████║ ██║ ███████║ ██║ ██║      ╚██████╔╝",
+    "╚══════╝ ╚═╝ ╚══════╝ ╚═╝ ╚═╝       ╚═════╝ ",
+]
+_HILL = [
+    "       ▄▄▄▄           ",
+    "      ▐██▓▓▌ ·  ·  ·  ",
+    "      ▐██▓▓▌          ",
+    "    ╱  ▀▀▀▀           ",
+    "  ╱                   ",
+    "╱                     ",
+]
+_WORDMARK_ASCII = [
+    " SSSS  III  SSSS  III  FFFFF   OOO  ",
+    "S       I  S       I   F      O   O ",
+    " SSS    I   SSS    I   FFF    O   O ",
+    "    S   I      S   I   F      O   O ",
+    "SSSS   III SSSS   III  F       OOO  ",
+]
+_HILL_ASCII = [
+    "     .--.        ",
+    "    ( ## )  . . .",
+    "   / '--'        ",
+    "  /              ",
+    " /               ",
+]
+
+if __name__ == "__main__":
     _demo()

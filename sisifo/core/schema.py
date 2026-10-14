@@ -87,7 +87,9 @@ class Recommendation(BaseModel):
 
 class AIResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    summary: str = Field(min_length=1, max_length=12000, description="Resumo em português brasileiro (pt-BR).")
+    summary: str = Field(
+        min_length=1, max_length=12000, description="Resumo em português brasileiro (pt-BR)."
+    )
     reviewed_evidence_ids: list[Identifier]
     recommendations: list[Recommendation] = Field(max_length=100)
     limitations: list[str] = Field(max_length=50)

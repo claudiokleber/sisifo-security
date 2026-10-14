@@ -26,40 +26,46 @@ from sisifo.core.session import atomic_write
 # Integration Identity and Capabilities
 # ============================================================================
 
+
 class IntegrationCategory(str, Enum):
     """Integration category classification."""
-    TOOL = "tool"                    # Local analysis tool (nmap, nikto, etc.)
+
+    TOOL = "tool"  # Local analysis tool (nmap, nikto, etc.)
     DATA_CONNECTOR = "data_connector"  # External data connector (OSINT, APIs)
     ACTIVE_OPERATION = "active_operation"  # Active operation on a target
 
 
 class IntegrationStatus(str, Enum):
     """Integration availability status."""
-    AVAILABLE = "available"           # Ready to use
+
+    AVAILABLE = "available"  # Ready to use
     NOT_CONFIGURED = "not_configured"  # Missing configuration/credentials
-    NOT_INSTALLED = "not_installed"    # Tool not found on system
-    EXPERIMENTAL = "experimental"      # Early stage, may change
-    DEPRECATED = "deprecated"          # Being phased out
-    UNAVAILABLE = "unavailable"        # Temporarily unavailable
+    NOT_INSTALLED = "not_installed"  # Tool not found on system
+    EXPERIMENTAL = "experimental"  # Early stage, may change
+    DEPRECATED = "deprecated"  # Being phased out
+    UNAVAILABLE = "unavailable"  # Temporarily unavailable
 
 
 class ExecutionMode(str, Enum):
     """Execution mode for the integration."""
-    LOCAL = "local"              # Runs locally on the executor
-    DOCKER = "docker"            # Runs in Docker container
-    REMOTE = "remote"            # Calls external service/API
+
+    LOCAL = "local"  # Runs locally on the executor
+    DOCKER = "docker"  # Runs in Docker container
+    REMOTE = "remote"  # Calls external service/API
 
 
 class EvidenceClassification(str, Enum):
     """Classification of evidence sensitivity."""
-    PUBLIC = "public"           # Public information, no restrictions
-    INTERNAL = "internal"       # Internal use only
-    SENSITIVE = "sensitive"     # Sensitive, restricted access
-    CLASSIFIED = "classified"   # Highly sensitive, need-to-know
+
+    PUBLIC = "public"  # Public information, no restrictions
+    INTERNAL = "internal"  # Internal use only
+    SENSITIVE = "sensitive"  # Sensitive, restricted access
+    CLASSIFIED = "classified"  # Highly sensitive, need-to-know
 
 
 class IntegrationCapability(BaseModel):
     """Describes a single capability of an integration."""
+
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(..., min_length=1, max_length=100, description="Capability identifier")
@@ -70,13 +76,16 @@ class IntegrationCapability(BaseModel):
     requires_docker: bool = Field(default=False, description="Requires Docker")
     external_network: bool = Field(default=False, description="Requires external network access")
     rate_limit: Optional[int] = Field(default=None, ge=1, description="Requests per minute")
-    timeout_seconds: Optional[int] = Field(default=None, ge=1, le=3600, description="Default timeout")
+    timeout_seconds: Optional[int] = Field(
+        default=None, ge=1, le=3600, description="Default timeout"
+    )
     external: bool = Field(default=False, description="Sends data to external service")
     consumes_credits: bool = Field(default=False, description="May consume paid credits")
 
 
 class IntegrationMeta(BaseModel):
     """Metadata for an integration in the catalog."""
+
     model_config = ConfigDict(extra="forbid")
 
     id: str = Field(..., min_length=1, max_length=100, pattern=r"^[a-z0-9_-]+$")
@@ -100,15 +109,18 @@ class IntegrationMeta(BaseModel):
 # Execution Contracts
 # ============================================================================
 
+
 class ExecutionScope(str, Enum):
     """Execution scope classification."""
-    PASSIVE = "passive"      # Read-only, no target modification
-    ACTIVE = "active"        # May modify target state
+
+    PASSIVE = "passive"  # Read-only, no target modification
+    ACTIVE = "active"  # May modify target state
     INTRUSIVE = "intrusive"  # May disrupt target
 
 
 class CredentialReference(BaseModel):
     """Reference to a stored credential (no secret in the request)."""
+
     model_config = ConfigDict(extra="forbid")
 
     service: str = Field(..., description="Service identifier")
@@ -118,6 +130,7 @@ class CredentialReference(BaseModel):
 
 class ExecutionLimits(BaseModel):
     """Execution limits for a request."""
+
     model_config = ConfigDict(extra="forbid")
 
     max_duration_seconds: int = Field(default=3600, ge=1, le=86400)
@@ -130,6 +143,7 @@ class ExecutionLimits(BaseModel):
 
 class ExecutionRequest(BaseModel):
     """Typed execution request for an integration capability."""
+
     model_config = ConfigDict(extra="forbid")
 
     integration_id: str = Field(..., min_length=1)
@@ -143,7 +157,7 @@ class ExecutionRequest(BaseModel):
     approval_ref: Optional[str] = Field(default=None, max_length=256)
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
-    @field_validator('idempotency_key', mode='before')
+    @field_validator("idempotency_key", mode="before")
     @classmethod
     def validate_idempotency_key(cls, v):
         if v is not None and len(v) > 128:
@@ -167,6 +181,7 @@ class ExecutionRequest(BaseModel):
 
 class ExecutionResult(BaseModel):
     """Normalized execution result."""
+
     model_config = ConfigDict(extra="forbid")
 
     execution_id: str = Field(default_factory=lambda: uuid4().hex)
@@ -188,7 +203,7 @@ class ExecutionResult(BaseModel):
     error_code: Optional[str] = None
     error_details: Optional[Dict[str, Any]] = None
 
-    @field_validator('finished_at', mode='before')
+    @field_validator("finished_at", mode="before")
     @classmethod
     def set_finished_at(cls, v):
         if v is None:
@@ -198,6 +213,7 @@ class ExecutionResult(BaseModel):
 
 class ExecutionState(str, Enum):
     """Job execution state."""
+
     PENDING = "pending"
     RUNNING = "running"
     CANCELLING = "cancelling"
@@ -212,8 +228,10 @@ class ExecutionState(str, Enum):
 # Evidence and Artifact Management
 # ============================================================================
 
+
 class EvidenceType(str, Enum):
     """Type of evidence artifact."""
+
     RAW_OUTPUT = "raw_output"
     PARSED_DATA = "parsed_data"
     REPORT = "report"
@@ -226,6 +244,7 @@ class EvidenceType(str, Enum):
 
 class EvidenceRef(BaseModel):
     """Reference to an evidence artifact."""
+
     model_config = ConfigDict(extra="forbid")
 
     execution_id: str
@@ -242,9 +261,10 @@ class EvidenceRef(BaseModel):
 # Credential Management
 # ============================================================================
 
+
 class CredentialManager:
     """Manages credential storage with separation from jobs/plans.
-    
+
     Reuses existing config system (load_service_config/save_service_config).
     """
 
@@ -287,6 +307,7 @@ class CredentialManager:
 # ============================================================================
 # Capability Catalog
 # ============================================================================
+
 
 class CapabilityCatalog:
     """Versioned capability catalog for all integrations."""
@@ -359,7 +380,10 @@ class CapabilityCatalog:
             if capability not in {c.name for c in self._catalog[integration_id].capabilities}:
                 raise ValueError(f"Capability {capability} not declared for {integration_id}")
             self._handlers[integration_id][capability] = handler
-            self._schemas[integration_id][capability] = (input_schema, options_schema or EmptyInputs)
+            self._schemas[integration_id][capability] = (
+                input_schema,
+                options_schema or EmptyInputs,
+            )
             self._policies[integration_id][capability] = policy or {}
 
     def get_handler(self, integration_id: str, capability: str) -> Optional[Callable]:
@@ -387,8 +411,11 @@ class CapabilityCatalog:
             self._refresh(integration_id)
             return self._catalog.get(integration_id)
 
-    def list(self, status: Optional[IntegrationStatus] = None,
-             category: Optional[IntegrationCategory] = None) -> List[IntegrationMeta]:
+    def list(
+        self,
+        status: Optional[IntegrationStatus] = None,
+        category: Optional[IntegrationCategory] = None,
+    ) -> List[IntegrationMeta]:
         with self._lock:
             for integration_id in self._availability:
                 self._refresh(integration_id)
@@ -411,7 +438,6 @@ class CapabilityCatalog:
             return meta.status if meta else None
 
 
-
 class EmptyInputs(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -423,8 +449,12 @@ class IntegrationExecutionService:
         self.catalog = catalog
         self.job_manager = job_manager
         self.evidence_root = Path(evidence_root)
-        self._gates = {m.id: threading.BoundedSemaphore(max(1, min(8, int(
-            m.execution_limits.get("max_concurrency", 1))))) for m in catalog.list()}
+        self._gates = {
+            m.id: threading.BoundedSemaphore(
+                max(1, min(8, int(m.execution_limits.get("max_concurrency", 1))))
+            )
+            for m in catalog.list()
+        }
 
     def _validate_scope_and_approval(self, request):
         policy = self.catalog.get_policy(request.integration_id, request.capability)
@@ -434,7 +464,9 @@ class IntegrationExecutionService:
             raise ValueError("Escopo insuficiente para esta capacidade.")
         # No approval authority exists yet. A client-supplied string is not authorization.
         if required != ExecutionScope.PASSIVE or policy.get("approval_required"):
-            raise ValueError("Capacidade bloqueada: requer aprovação; use o fluxo de proposta e confirmação específico do serviço.")
+            raise ValueError(
+                "Capacidade bloqueada: requer aprovação; use o fluxo de proposta e confirmação específico do serviço."
+            )
 
     def submit(self, request):
         request = request.model_copy(deep=True)
@@ -451,36 +483,56 @@ class IntegrationExecutionService:
         if not schemas:
             raise ValueError("Capacidade sem schema.")
         from pydantic import ValidationError
+
         try:
             request.inputs = schemas[0].model_validate(request.inputs).model_dump(mode="json")
             request.options = schemas[1].model_validate(request.options).model_dump(mode="json")
         except ValidationError:
             raise ValueError("Entradas ou opções inválidas para esta capacidade.") from None
         if request.credentials:
-            raise ValueError("Referências de credenciais são definidas pelo registro, não pelo cliente.")
+            raise ValueError(
+                "Referências de credenciais são definidas pelo registro, não pelo cliente."
+            )
         if request.limits.rate_limit is not None or request.limits.memory_limit_mib is not None:
             raise ValueError("Limites de taxa/memória por requisição ainda não suportados.")
         self._validate_scope_and_approval(request)
         policy = self.catalog.get_policy(request.integration_id, request.capability)
-        seconds = min(request.limits.max_duration_seconds,
-                      capability.timeout_seconds or 300,
-                      int(meta.execution_limits.get("max_duration_seconds", 300)))
-        output_bytes = min(request.limits.max_output_size_mib,
-                           int(meta.execution_limits.get("max_output_size_mib", 10)), 100) * 1024 * 1024
+        seconds = min(
+            request.limits.max_duration_seconds,
+            capability.timeout_seconds or 300,
+            int(meta.execution_limits.get("max_duration_seconds", 300)),
+        )
+        output_bytes = (
+            min(
+                request.limits.max_output_size_mib,
+                int(meta.execution_limits.get("max_output_size_mib", 10)),
+                100,
+            )
+            * 1024
+            * 1024
+        )
 
         def execute_handler(control):
             import time
 
             from sisifo.core.redaction import redact
+
             control.check()
             self._validate_scope_and_approval(request)
-            if self.catalog.get(request.integration_id).status not in {IntegrationStatus.AVAILABLE, IntegrationStatus.EXPERIMENTAL}:
+            if self.catalog.get(request.integration_id).status not in {
+                IntegrationStatus.AVAILABLE,
+                IntegrationStatus.EXPERIMENTAL,
+            }:
                 raise ValueError("Integração indisponível ou não configurada.")
             credentials = {}
             for service in policy.get("credential_services", []):
                 credentials[service] = load_service_config(service)
-            secrets = [v for fields in credentials.values() for v in fields.values()
-                       if isinstance(v, str) and v]
+            secrets = [
+                v
+                for fields in credentials.values()
+                for v in fields.values()
+                if isinstance(v, str) and v
+            ]
 
             def sanitize(value):
                 value = redact(value)[0]
@@ -504,16 +556,25 @@ class IntegrationExecutionService:
             # Handlers get the real cancellation/deadline object with bounded progress.
             original_progress = control.progress_callback
             control.progress_callback = lambda message, result=None: original_progress(
-                bounded(message), bounded(result))
+                bounded(message), bounded(result)
+            )
             start = time.monotonic()
-            result = handler(inputs=request.inputs, options=request.options,
-                             context={"credentials": credentials}, control=control)
+            result = handler(
+                inputs=request.inputs,
+                options=request.options,
+                context={"credentials": credentials},
+                control=control,
+            )
             control.check()
             if isinstance(result, ExecutionResult):
                 result = result.model_copy(deep=True)
             elif isinstance(result, dict):
-                result = ExecutionResult(integration_id=request.integration_id,
-                    capability=request.capability, status="completed", outputs=result)
+                result = ExecutionResult(
+                    integration_id=request.integration_id,
+                    capability=request.capability,
+                    status="completed",
+                    outputs=result,
+                )
             else:
                 raise ValueError("Handler retornou um resultado inválido.")
             result.duration_seconds = time.monotonic() - start
@@ -533,12 +594,16 @@ class IntegrationExecutionService:
         # The queue atomically owns idempotency, including its persisted hash.
         return self.job_manager.submit(
             kind=f"integration_{request.integration_id}_{request.capability}",
-            payload={"canonical": request.canonical_key()}, function=execute,
-            key=request.idempotency_key, seconds=seconds)
+            payload={"canonical": request.canonical_key()},
+            function=execute,
+            key=request.idempotency_key,
+            seconds=seconds,
+        )
 
     def list_jobs(self, limit=100):
-        return [job for job in self.job_manager.list()
-                if job.get("type", "").startswith("integration_")][:limit]
+        return [
+            job for job in self.job_manager.list() if job.get("type", "").startswith("integration_")
+        ][:limit]
 
     def get_job(self, job_id):
         job = self.job_manager.get(job_id)

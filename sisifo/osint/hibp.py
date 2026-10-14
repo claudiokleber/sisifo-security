@@ -24,9 +24,21 @@ from sisifo.osint.executor import OsintExecutionError, controlled
 
 
 class HibpConnector(BaseConnector):
-    ai_evidence_fields = frozenset({'hibp_breach_name', 'hibp_title', 'hibp_domain', 'hibp_breach_date',
-        'hibp_data_classes', 'hibp_is_verified', 'hibp_is_sensitive', 'hibp_is_fabricated',
-        'hibp_is_retired', 'hibp_is_malware', 'hibp_is_stealer_log'})
+    ai_evidence_fields = frozenset(
+        {
+            "hibp_breach_name",
+            "hibp_title",
+            "hibp_domain",
+            "hibp_breach_date",
+            "hibp_data_classes",
+            "hibp_is_verified",
+            "hibp_is_sensitive",
+            "hibp_is_fabricated",
+            "hibp_is_retired",
+            "hibp_is_malware",
+            "hibp_is_stealer_log",
+        }
+    )
     """Have I Been Pwned connector for email breach lookup.
 
     The HIBP API v3 breachedaccount endpoint accepts an email address
@@ -87,6 +99,7 @@ class HibpConnector(BaseConnector):
         if not isinstance(api_key, str) or not api_key.strip():
             return False
         import re
+
         return bool(re.fullmatch(self.API_KEY_PATTERN, api_key.strip()))
 
     def diagnose(self, config: Dict[str, Any]) -> Dict[str, Any]:
@@ -162,14 +175,17 @@ class HibpConnector(BaseConnector):
         params = {"truncateResponse": "false"}
 
         try:
-            response = await controlled(transport.execute_http_query(
-                url=url,
-                method="GET",
-                headers=headers,
-                params=params,
-                config=config,
-                control=control,
-            ), control)
+            response = await controlled(
+                transport.execute_http_query(
+                    url=url,
+                    method="GET",
+                    headers=headers,
+                    params=params,
+                    config=config,
+                    control=control,
+                ),
+                control,
+            )
         except OsintExecutionError as e:
             # Re-raise with HIBP-specific context based on HTTP status
             mapped = self._map_hibp_error(e, endpoint="breachedaccount")
@@ -331,7 +347,9 @@ class HibpConnector(BaseConnector):
             if breach.get("IsMalware"):
                 warnings.append("Violação originada de malware/stealer (credenciais roubadas).")
             if breach.get("IsStealerLog"):
-                warnings.append("Violação proveniente de log de stealer (malware de roubo de credenciais).")
+                warnings.append(
+                    "Violação proveniente de log de stealer (malware de roubo de credenciais)."
+                )
 
             # Limitations - factual statements about the data
             limitations = [
@@ -379,7 +397,9 @@ class HibpConnector(BaseConnector):
         )
         return response.json()
 
-    async def get_breach_detail(self, breach_name: str, config: Dict[str, Any], transport) -> Dict[str, Any]:
+    async def get_breach_detail(
+        self, breach_name: str, config: Dict[str, Any], transport
+    ) -> Dict[str, Any]:
         """Get details of a specific breach (GET /breach/{name}).
 
         Note: This is an internal method, not registered as an executable capability.

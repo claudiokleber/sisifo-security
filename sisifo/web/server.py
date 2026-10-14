@@ -69,7 +69,9 @@ async def lifespan(app: FastAPI):
     app.state.jobs = JobManager(store.data_root(), workers=int(os.getenv("SISIFO_MAX_JOBS", "2")))
     try:
         catalog = await run_in_threadpool(create_catalog)
-        app.state.integrations = IntegrationExecutionService(catalog, app.state.jobs, store.data_root() / "evidence")
+        app.state.integrations = IntegrationExecutionService(
+            catalog, app.state.jobs, store.data_root() / "evidence"
+        )
         yield
     finally:
         await run_in_threadpool(app.state.jobs.close)
@@ -82,7 +84,9 @@ app.add_middleware(RequestLimits)
 
 @app.exception_handler(RequestValidationError)
 async def validation_error(request, error):
-    return JSONResponse({"detail": "Entrada inválida; confira os campos e limites."}, status_code=422)
+    return JSONResponse(
+        {"detail": "Entrada inválida; confira os campos e limites."}, status_code=422
+    )
 
 
 app.add_middleware(HostValidationMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
@@ -153,13 +157,17 @@ async def login_page(request: Request):
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
     if session_id and session_manager.get_session(session_id):
         return RedirectResponse(url="/", status_code=302)
-    return templates.TemplateResponse(name="login.html", context={"request": request}, request=request)
+    return templates.TemplateResponse(
+        name="login.html", context={"request": request}, request=request
+    )
 
 
 @app.post("/login")
 async def login(response: Response, password: str = Form(...)):
     if not web_password_configured():
-        raise HTTPException(status_code=500, detail="Senha web não configurada. Execute 'sisifo setup-web'.")
+        raise HTTPException(
+            status_code=500, detail="Senha web não configurada. Execute 'sisifo setup-web'."
+        )
     if not await run_in_threadpool(verify_web_password, password):
         raise HTTPException(status_code=401, detail="Senha incorreta")
     session_id = session_manager.create_session()
@@ -187,7 +195,9 @@ async def login(response: Response, password: str = Form(...)):
 
 
 @app.post("/logout")
-async def logout(response: Response, session_id: str = Depends(require_session), _: None = Depends(verify_csrf)):
+async def logout(
+    response: Response, session_id: str = Depends(require_session), _: None = Depends(verify_csrf)
+):
     session_manager.delete_session(session_id)
     response = RedirectResponse(url="/login", status_code=302)
     response.delete_cookie(SESSION_COOKIE_NAME, path="/")
@@ -200,7 +210,11 @@ async def index(request: Request):
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
     if not session_id or not session_manager.get_session(session_id):
         return RedirectResponse(url="/login", status_code=302)
-    return templates.TemplateResponse(name="index.html", context={"request": request, "csrf_token": session_manager.get_csrf_token(session_id)}, request=request)
+    return templates.TemplateResponse(
+        name="index.html",
+        context={"request": request, "csrf_token": session_manager.get_csrf_token(session_id)},
+        request=request,
+    )
 
 
 @app.get("/api/sessions")
@@ -266,13 +280,19 @@ async def api_report(session_id: str, format: str = Query("md"), _: str = Depend
             path = report_dir / "report.md"
         if not path.exists():
             raise HTTPException(status_code=404, detail="Relatório não encontrado")
-        return FileResponse(path, media_type="application/json" if format == "json" else "text/markdown", filename=path.name)
+        return FileResponse(
+            path,
+            media_type="application/json" if format == "json" else "text/markdown",
+            filename=path.name,
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
 
 @app.post("/api/sessions/verify/{session_id}")
-async def api_verify(session_id: str, _: str = Depends(require_session), __: None = Depends(verify_csrf)):
+async def api_verify(
+    session_id: str, _: str = Depends(require_session), __: None = Depends(verify_csrf)
+):
     try:
         findings = store.verified_findings(store.load_session(session_id))
         return {"verified": True, "count": len(findings)}
@@ -281,7 +301,9 @@ async def api_verify(session_id: str, _: str = Depends(require_session), __: Non
 
 
 @app.post("/api/sessions/compare")
-async def api_compare(request: CompareRequest, _: str = Depends(require_session), __: None = Depends(verify_csrf)):
+async def api_compare(
+    request: CompareRequest, _: str = Depends(require_session), __: None = Depends(verify_csrf)
+):
     try:
         result = compare_sessions(request.before, request.after)
         return result
@@ -290,23 +312,39 @@ async def api_compare(request: CompareRequest, _: str = Depends(require_session)
 
 
 @app.post("/api/scan")
-async def api_scan(body: ScanRequest, request: Request, _: str = Depends(require_session), __: None = Depends(verify_csrf)):
+async def api_scan(
+    body: ScanRequest,
+    request: Request,
+    _: str = Depends(require_session),
+    __: None = Depends(verify_csrf),
+):
     from sisifo.core.modules import select_modules, target_for
     from sisifo.core.orchestrator import scan
+
     try:
         for module in select_modules(body.modules):
             module.command(target_for(module, body.target))
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from None
+
     def execute(control):
         result = scan(body.target, body.modules, body.project, body.timeout, control=control)
         build_report(result.id)
         return {"session_id": result.id, "status": result.status}
-    return submit(request, "scan", body.model_dump(), execute, seconds=body.timeout * len(body.modules.split(',')) + 120)
+
+    return submit(
+        request,
+        "scan",
+        body.model_dump(),
+        execute,
+        seconds=body.timeout * len(body.modules.split(",")) + 120,
+    )
 
 
 @app.post("/api/analyze/preview")
-async def api_analyze_preview(body: AnalyzeRequest, _: str = Depends(require_session), __: None = Depends(verify_csrf)):
+async def api_analyze_preview(
+    body: AnalyzeRequest, _: str = Depends(require_session), __: None = Depends(verify_csrf)
+):
     try:
         return await run_in_threadpool(prepare_batches, body.session_id)
     except ValueError as error:
@@ -314,7 +352,12 @@ async def api_analyze_preview(body: AnalyzeRequest, _: str = Depends(require_ses
 
 
 @app.post("/api/analyze")
-async def api_analyze(body: AnalyzeRequest, request: Request, _: str = Depends(require_session), __: None = Depends(verify_csrf)):
+async def api_analyze(
+    body: AnalyzeRequest,
+    request: Request,
+    _: str = Depends(require_session),
+    __: None = Depends(verify_csrf),
+):
     try:
         store.load_session(body.session_id)
     except ValueError as error:
@@ -322,14 +365,25 @@ async def api_analyze(body: AnalyzeRequest, request: Request, _: str = Depends(r
     # Browser may only select a server-configured endpoint, not an arbitrary network destination.
     if body.endpoint and body.endpoint != os.getenv("SISIFO_OLLAMA_URL", "http://localhost:11434"):
         raise HTTPException(status_code=400, detail="Configure o endpoint no ambiente do servidor.")
-    return submit(request, "analyze", body.model_dump(),
-                  lambda control: analyze_session(**body.model_dump(), control=control), seconds=body.max_seconds)
+    return submit(
+        request,
+        "analyze",
+        body.model_dump(),
+        lambda control: analyze_session(**body.model_dump(), control=control),
+        seconds=body.max_seconds,
+    )
 
 
 @app.post("/api/import-nmap")
-async def api_import_nmap(file: UploadFile = File(...), target: str = Form(...), project: str = Form("default"),
-                          _: str = Depends(require_session), __: None = Depends(verify_csrf)):
+async def api_import_nmap(
+    file: UploadFile = File(...),
+    target: str = Form(...),
+    project: str = Form("default"),
+    _: str = Depends(require_session),
+    __: None = Depends(verify_csrf),
+):
     from sisifo.core.importer import import_nmap
+
     try:
         with tempfile.TemporaryDirectory(prefix="sisifo-upload-") as temp:
             path = Path(temp) / "input.xml"
@@ -353,7 +407,9 @@ async def api_import_nmap(file: UploadFile = File(...), target: str = Form(...),
 async def api_osint_connectors(_: str = Depends(require_session)):
     result = list_connectors()
     for cid, meta in result.items():
-        meta["configured"] = bool(get_connector(cid).validate_config(load_service_config(f"osint_{cid}")))
+        meta["configured"] = bool(
+            get_connector(cid).validate_config(load_service_config(f"osint_{cid}"))
+        )
     return {"connectors": result}
 
 
@@ -373,37 +429,64 @@ def validate_osint(body):
     connector = get_connector(body.connector_id)
     qt = QueryType(body.query_type)
     cfg = load_service_config(f"osint_{body.connector_id}")
-    if not connector.validate_config(cfg) or qt not in connector.meta.query_types or not connector.validate_query(body.query, qt):
+    if (
+        not connector.validate_config(cfg)
+        or qt not in connector.meta.query_types
+        or not connector.validate_query(body.query, qt)
+    ):
         raise ValueError("Conector, configuração ou consulta inválidos.")
     return connector, qt, cfg
 
 
 @app.post("/api/osint/proposals")
-async def osint_proposal(body: OsintQueryRequest, request: Request, owner: str = Depends(require_session), _: None = Depends(verify_csrf)):
+async def osint_proposal(
+    body: OsintQueryRequest,
+    request: Request,
+    owner: str = Depends(require_session),
+    _: None = Depends(verify_csrf),
+):
     try:
         connector, _, _ = validate_osint(body)
         token = request.app.state.osint_proposals.create(owner, "query", body.model_dump())
-        return {"proposal_id": token, **body.model_dump(), "destinations": connector.meta.allowed_destinations,
-                "cost": "Consulte o plano do serviço; custo não estimado.", "expires_in": 300}
+        return {
+            "proposal_id": token,
+            **body.model_dump(),
+            "destinations": connector.meta.allowed_destinations,
+            "cost": "Consulte o plano do serviço; custo não estimado.",
+            "expires_in": 300,
+        }
     except (KeyError, ValueError):
         raise HTTPException(400, "Conector, configuração ou consulta inválidos.") from None
 
 
 @app.post("/api/osint/query")
-async def api_osint_query(body: OsintApproval, request: Request, owner: str = Depends(require_session), _: None = Depends(verify_csrf)):
+async def api_osint_query(
+    body: OsintApproval,
+    request: Request,
+    owner: str = Depends(require_session),
+    _: None = Depends(verify_csrf),
+):
     def enqueue(payload):
         connector, qt, cfg = validate_osint(OsintQueryRequest(**payload))
+
         def execute(control):
             try:
-                result = run_query(connector, payload['query'], qt, cfg, control)
-                return {"results": [r.model_dump(mode="json") for r in result],
-                        "outcome": "RESULTS" if result else "NO_RESULTS",
-                        "limitations": ["Ausência de resultados não comprova ausência de exposição."]}
+                result = run_query(connector, payload["query"], qt, cfg, control)
+                return {
+                    "results": [r.model_dump(mode="json") for r in result],
+                    "outcome": "RESULTS" if result else "NO_RESULTS",
+                    "limitations": ["Ausência de resultados não comprova ausência de exposição."],
+                }
             except OsintExecutionError as error:
-                return {"status": "failed", "error_code": error.code,
-                        "retry_after": error.details.get("retry_after"),
-                        "message": "Consulta não concluída. Confira configuração, limites e disponibilidade do serviço."}
+                return {
+                    "status": "failed",
+                    "error_code": error.code,
+                    "retry_after": error.details.get("retry_after"),
+                    "message": "Consulta não concluída. Confira configuração, limites e disponibilidade do serviço.",
+                }
+
         return submit(request, "osint", payload, execute, seconds=60)
+
     try:
         return request.app.state.osint_proposals.execute(body.proposal_id, owner, "query", enqueue)
     except (KeyError, ValueError) as error:
@@ -411,38 +494,61 @@ async def api_osint_query(body: OsintApproval, request: Request, owner: str = De
 
 
 @app.post("/api/osint/ai/preview")
-async def osint_ai_preview(body: OsintSelection, request: Request, owner: str = Depends(require_session), _: None = Depends(verify_csrf)):
+async def osint_ai_preview(
+    body: OsintSelection,
+    request: Request,
+    owner: str = Depends(require_session),
+    _: None = Depends(verify_csrf),
+):
     try:
         job = manager(request).get(body.job_id)
-        if job['type'] != 'osint' or job['status'] != 'completed':
-            raise ValueError('Selecione uma consulta OSINT concluída.')
-        preview = ai_preview(job['result'].get('results', []), body.indices)
+        if job["type"] != "osint" or job["status"] != "completed":
+            raise ValueError("Selecione uma consulta OSINT concluída.")
+        preview = ai_preview(job["result"].get("results", []), body.indices)
         from sisifo.core.ai_connection import public_status
+
         status = public_status()
-        if not status.get('configured'):
-            raise ValueError('A IA ainda não está configurada. Abra Configurações → Conexão com a IA. Seus resultados continuam disponíveis.')
-        token = request.app.state.osint_proposals.create(owner, 'ai', {'preview': preview, 'connection': status})
-        return {'proposal_id': token, 'preview': preview, 'destination': status.get('endpoint', 'IA configurada')}
+        if not status.get("configured"):
+            raise ValueError(
+                "A IA ainda não está configurada. Abra Configurações → Conexão com a IA. Seus resultados continuam disponíveis."
+            )
+        token = request.app.state.osint_proposals.create(
+            owner, "ai", {"preview": preview, "connection": status}
+        )
+        return {
+            "proposal_id": token,
+            "preview": preview,
+            "destination": status.get("endpoint", "IA configurada"),
+        }
     except ValueError as error:
         raise HTTPException(400, str(error)) from None
 
 
 @app.post("/api/osint/ai/interpret")
-async def osint_ai_interpret(body: OsintApproval, request: Request, owner: str = Depends(require_session), _: None = Depends(verify_csrf)):
+async def osint_ai_interpret(
+    body: OsintApproval,
+    request: Request,
+    owner: str = Depends(require_session),
+    _: None = Depends(verify_csrf),
+):
     def enqueue(payload):
         from sisifo.core.ai_connection import public_status
-        if public_status() != payload['connection']:
-            raise ValueError('Conexão de IA alterada; gere uma nova prévia.')
+
+        if public_status() != payload["connection"]:
+            raise ValueError("Conexão de IA alterada; gere uma nova prévia.")
+
         def execute(control):
             control.check()
-            if public_status() != payload['connection']:
-                raise ValueError('Conexão de IA alterada.')
-            answer = interpret(payload['preview'], control=control)
+            if public_status() != payload["connection"]:
+                raise ValueError("Conexão de IA alterada.")
+            answer = interpret(payload["preview"], control=control)
             control.check()
             return answer
-        return submit(request, 'osint-ai', payload, execute, seconds=120)
+
+        return submit(request, "osint-ai", payload, execute, seconds=120)
+
     try:
-        return request.app.state.osint_proposals.execute(body.proposal_id, owner, 'ai', enqueue)
+        return request.app.state.osint_proposals.execute(body.proposal_id, owner, "ai", enqueue)
     except ValueError as error:
         raise HTTPException(400, str(error)) from None
 
@@ -461,7 +567,12 @@ async def api_job_status(job_id: str, request: Request, _: str = Depends(require
 
 
 @app.post("/api/jobs/{job_id}/cancel")
-async def api_cancel_job(job_id: str, request: Request, _: str = Depends(require_session), __: None = Depends(verify_csrf)):
+async def api_cancel_job(
+    job_id: str,
+    request: Request,
+    _: str = Depends(require_session),
+    __: None = Depends(verify_csrf),
+):
     try:
         manager(request).cancel(job_id)
         return manager(request).get(job_id)
@@ -480,11 +591,17 @@ class AIConfigRequest(AIConnectionRequest):
 
 
 @app.post("/api/ai/models")
-async def ai_models(body: AIConnectionRequest, _: str = Depends(require_session), __: None = Depends(verify_csrf)):
+async def ai_models(
+    body: AIConnectionRequest, _: str = Depends(require_session), __: None = Depends(verify_csrf)
+):
     from sisifo.core.ai_connection import discover_models
+
     try:
         models = await run_in_threadpool(discover_models, body.endpoint, body.api_key)
-        return {"models": models, "note": "Catálogo obtido; teste o modelo para verificar acesso de inferência."}
+        return {
+            "models": models,
+            "note": "Catálogo obtido; teste o modelo para verificar acesso de inferência.",
+        }
     except ValueError as error:
         raise HTTPException(400, str(error)) from None
 
@@ -495,10 +612,16 @@ class OfflineAIRequest(BaseModel):
 
 
 @app.post("/api/config/ai")
-async def api_save_ai(body: AIConfigRequest | OfflineAIRequest, _: str = Depends(require_session), __: None = Depends(verify_csrf)):
+async def api_save_ai(
+    body: AIConfigRequest | OfflineAIRequest,
+    _: str = Depends(require_session),
+    __: None = Depends(verify_csrf),
+):
     from sisifo.core.ai_connection import connect
+
     if isinstance(body, OfflineAIRequest):
         from sisifo.core.config import save_config
+
         save_config("export", "")
         return {"configured": False}
     try:
@@ -519,11 +642,15 @@ class ChatRequest(BaseModel):
 
 
 @app.post("/api/ai/chat")
-async def ai_chat(body: ChatRequest, _: str = Depends(require_session), __: None = Depends(verify_csrf)):
+async def ai_chat(
+    body: ChatRequest, _: str = Depends(require_session), __: None = Depends(verify_csrf)
+):
     from sisifo.core.ai_connection import chat
+
     try:
-        return await run_in_threadpool(chat, [m.model_dump() for m in body.messages],
-                                      body.session_id, body.include_evidence)
+        return await run_in_threadpool(
+            chat, [m.model_dump() for m in body.messages], body.session_id, body.include_evidence
+        )
     except ValueError as error:
         raise HTTPException(400, str(error)) from None
 
@@ -610,7 +737,9 @@ async def api_network_diagnostics(_: str = Depends(require_session)):
 
 
 @app.get("/api/network/captures")
-async def api_network_list_captures(limit: int = Query(50, ge=1, le=200), _: str = Depends(require_session)):
+async def api_network_list_captures(
+    limit: int = Query(50, ge=1, le=200), _: str = Depends(require_session)
+):
     service = NetworkService()
     captures = service.list_captures(limit=limit)
     return {
@@ -639,10 +768,13 @@ async def api_network_import(
     __: None = Depends(verify_csrf),
 ):
     service = NetworkService()
-    if not file.filename or not (file.filename.endswith(".pcap") or file.filename.endswith(".pcapng")):
+    if not file.filename or not (
+        file.filename.endswith(".pcap") or file.filename.endswith(".pcapng")
+    ):
         raise HTTPException(status_code=400, detail="Arquivo deve ser .pcap ou .pcapng")
 
     import tempfile
+
     with tempfile.TemporaryDirectory(prefix="sisifo-upload-") as temp:
         temp_path = Path(temp) / file.filename
         size = 0
@@ -718,7 +850,11 @@ async def api_network_packets(
     try:
         df = DisplayFilter(expression=body.display_filter) if body.display_filter else None
         packets = await run_in_threadpool(
-            service.list_packets, capture_id, display_filter=df, offset=body.offset, limit=body.limit
+            service.list_packets,
+            capture_id,
+            display_filter=df,
+            offset=body.offset,
+            limit=body.limit,
         )
         return {
             "packets": [
@@ -740,7 +876,9 @@ async def api_network_packets(
 
 
 @app.get("/api/network/captures/{capture_id}/packets/{packet_number}")
-async def api_network_packet_detail(capture_id: str, packet_number: int, _: str = Depends(require_session)):
+async def api_network_packet_detail(
+    capture_id: str, packet_number: int, _: str = Depends(require_session)
+):
     service = NetworkService()
     try:
         detail = await run_in_threadpool(service.get_packet_detail, capture_id, packet_number)
@@ -895,7 +1033,9 @@ async def api_network_report(
 
 
 @app.post("/api/network/captures/{capture_id}/open-wireshark")
-async def api_network_open_wireshark(capture_id: str, _: str = Depends(require_session), __: None = Depends(verify_csrf)):
+async def api_network_open_wireshark(
+    capture_id: str, _: str = Depends(require_session), __: None = Depends(verify_csrf)
+):
     service = NetworkService()
     try:
         service.open_in_wireshark(capture_id)
@@ -947,14 +1087,20 @@ async def api_network_capture(
 
     iface_ids = [i.id for i in diag.interfaces]
     if body.interface_id not in iface_ids:
-        raise HTTPException(status_code=400, detail=f"Interface '{body.interface_id}' não encontrada")
+        raise HTTPException(
+            status_code=400, detail=f"Interface '{body.interface_id}' não encontrada"
+        )
 
     seconds = body.max_duration_seconds + 60
-    return submit(request, "network_capture", body.model_dump(), _run_network_capture, seconds=seconds)
+    return submit(
+        request, "network_capture", body.model_dump(), _run_network_capture, seconds=seconds
+    )
 
 
 @app.post("/api/network/captures/{capture_id}/stop")
-async def api_network_stop(capture_id: str, _: str = Depends(require_session), __: None = Depends(verify_csrf)):
+async def api_network_stop(
+    capture_id: str, _: str = Depends(require_session), __: None = Depends(verify_csrf)
+):
     service = NetworkService()
     try:
         result = await run_in_threadpool(service.stop_capture, capture_id)
@@ -968,14 +1114,21 @@ async def api_network_stop(capture_id: str, _: str = Depends(require_session), _
 
 
 @app.post("/api/config/web")
-async def api_save_password(body: PasswordRequest, _: str = Depends(require_session), __: None = Depends(verify_csrf)):
+async def api_save_password(
+    body: PasswordRequest, _: str = Depends(require_session), __: None = Depends(verify_csrf)
+):
     await run_in_threadpool(set_web_password, body.password)
     session_manager._sessions.clear()
     return {"saved": True, "login_required": True}
 
 
 @app.post("/api/config/osint/{connector_id}")
-async def api_save_osint(connector_id: str, body: dict[str, str], _: str = Depends(require_session), __: None = Depends(verify_csrf)):
+async def api_save_osint(
+    connector_id: str,
+    body: dict[str, str],
+    _: str = Depends(require_session),
+    __: None = Depends(verify_csrf),
+):
     try:
         connector = get_connector(connector_id)
         allowed = {f.name for f in connector.meta.config.fields}
@@ -1009,8 +1162,13 @@ async def api_modules(_: str = Depends(require_session)):
 async def api_config_status(_: str = Depends(require_session)):
     osint_configs = {}
     for connector_id in list_connectors().keys():
-        osint_configs[connector_id] = bool(get_connector(connector_id).validate_config(load_service_config(f"osint_{connector_id}")))
+        osint_configs[connector_id] = bool(
+            get_connector(connector_id).validate_config(
+                load_service_config(f"osint_{connector_id}")
+            )
+        )
     from sisifo.core.ai_connection import public_status
+
     return {
         "ai": public_status(),
         "osint": osint_configs,
@@ -1019,12 +1177,20 @@ async def api_config_status(_: str = Depends(require_session)):
 
 
 @app.post("/api/sessions/{session_id}/export-vault")
-async def api_export_vault(session_id: str, vault: str = Query(...), _: str = Depends(require_session), __: None = Depends(verify_csrf)):
+async def api_export_vault(
+    session_id: str,
+    vault: str = Query(...),
+    _: str = Depends(require_session),
+    __: None = Depends(verify_csrf),
+):
     from sisifo.core.vault import export_vault as export
 
     allowed = os.getenv("SISIFO_VAULT_DIR")
     if not allowed or Path(vault).resolve() != Path(allowed).resolve():
-        raise HTTPException(status_code=403, detail="Configure SISIFO_VAULT_DIR no servidor para autorizar exportação.")
+        raise HTTPException(
+            status_code=403,
+            detail="Configure SISIFO_VAULT_DIR no servidor para autorizar exportação.",
+        )
     try:
         path = export(session_id, Path(allowed))
         return {"path": str(path)}
@@ -1051,20 +1217,28 @@ async def api_download(session_id: str, file_type: str, _: str = Depends(require
 
 
 @app.get("/api/integration/catalog")
-async def integration_catalog(request: Request, status: Optional[str] = None,
-                              category: Optional[str] = None, _: str = Depends(require_session)):
+async def integration_catalog(
+    request: Request,
+    status: Optional[str] = None,
+    category: Optional[str] = None,
+    _: str = Depends(require_session),
+):
     from sisifo.core.integration import IntegrationCategory, IntegrationStatus
+
     try:
         items = request.app.state.integrations.catalog.list(
             IntegrationStatus(status) if status else None,
-            IntegrationCategory(category) if category else None)
+            IntegrationCategory(category) if category else None,
+        )
     except ValueError:
         raise HTTPException(400, "Filtro inválido") from None
     return {"integrations": [item.model_dump(mode="json") for item in items]}
 
 
 @app.get("/api/integration/catalog/{integration_id}")
-async def integration_detail(integration_id: str, request: Request, _: str = Depends(require_session)):
+async def integration_detail(
+    integration_id: str, request: Request, _: str = Depends(require_session)
+):
     meta = request.app.state.integrations.catalog.get(integration_id)
     if not meta:
         raise HTTPException(404, "Integração não encontrada")
@@ -1072,7 +1246,9 @@ async def integration_detail(integration_id: str, request: Request, _: str = Dep
 
 
 @app.get("/api/integration/catalog/{integration_id}/capabilities")
-async def integration_capabilities(integration_id: str, request: Request, _: str = Depends(require_session)):
+async def integration_capabilities(
+    integration_id: str, request: Request, _: str = Depends(require_session)
+):
     meta = request.app.state.integrations.catalog.get(integration_id)
     if not meta:
         raise HTTPException(404, "Integração não encontrada")
@@ -1080,8 +1256,12 @@ async def integration_capabilities(integration_id: str, request: Request, _: str
 
 
 @app.post("/api/integration/execute", status_code=202)
-async def integration_execute(body: ExecutionRequest, request: Request,
-                              _: str = Depends(require_session), __: None = Depends(verify_csrf)):
+async def integration_execute(
+    body: ExecutionRequest,
+    request: Request,
+    _: str = Depends(require_session),
+    __: None = Depends(verify_csrf),
+):
     service = request.app.state.integrations
     try:
         job_id = await run_in_threadpool(service.submit, body)
@@ -1094,8 +1274,9 @@ async def integration_execute(body: ExecutionRequest, request: Request,
 
 
 @app.get("/api/integration/jobs")
-async def integration_jobs(request: Request, limit: int = Query(100, ge=1, le=100),
-                           _: str = Depends(require_session)):
+async def integration_jobs(
+    request: Request, limit: int = Query(100, ge=1, le=100), _: str = Depends(require_session)
+):
     return {"jobs": request.app.state.integrations.list_jobs(limit)}
 
 
@@ -1108,8 +1289,12 @@ async def integration_job(job_id: str, request: Request, _: str = Depends(requir
 
 
 @app.post("/api/integration/jobs/{job_id}/cancel")
-async def integration_cancel(job_id: str, request: Request, _: str = Depends(require_session),
-                             __: None = Depends(verify_csrf)):
+async def integration_cancel(
+    job_id: str,
+    request: Request,
+    _: str = Depends(require_session),
+    __: None = Depends(verify_csrf),
+):
     try:
         return request.app.state.integrations.cancel(job_id)
     except ValueError:

@@ -6,7 +6,9 @@ from rich.console import Console
 
 from sisifo.core import agent
 
-app = typer.Typer(help="Agente assistido: planos tipados e execução auditável.", no_args_is_help=True)
+app = typer.Typer(
+    help="Agente assistido: planos tipados e execução auditável.", no_args_is_help=True
+)
 console = Console(markup=False)
 
 

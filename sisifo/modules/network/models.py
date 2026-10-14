@@ -37,7 +37,9 @@ class NetworkInterface(BaseModel):
     description: str = Field(default="", description="Detailed description")
     loopback: bool = Field(default=False, description="Whether this is a loopback interface")
     up: bool = Field(default=True, description="Whether the interface is up")
-    addresses: list[str] = Field(default_factory=list, description="IP addresses assigned to this interface")
+    addresses: list[str] = Field(
+        default_factory=list, description="IP addresses assigned to this interface"
+    )
     speeds: list[int] = Field(default_factory=list, description="Supported speeds in Mbps")
 
     model_config = ConfigDict(extra="forbid")
@@ -55,7 +57,9 @@ class CaptureFilter(BaseModel):
 class DisplayFilter(BaseModel):
     """Display filter using Wireshark/TShark syntax."""
 
-    expression: str = Field(default="", description="Wireshark display filter expression (e.g., 'dns')")
+    expression: str = Field(
+        default="", description="Wireshark display filter expression (e.g., 'dns')"
+    )
     description: str = Field(default="", description="Human-readable description")
 
     model_config = ConfigDict(extra="forbid")
@@ -64,10 +68,18 @@ class DisplayFilter(BaseModel):
 class CaptureLimits(BaseModel):
     """Limits for a capture session."""
 
-    max_duration_seconds: int = Field(default=60, ge=1, le=86400, description="Maximum capture duration in seconds")
-    max_file_size_mib: int = Field(default=100, ge=1, le=10240, description="Maximum file size in MiB")
-    max_packets: int = Field(default=100000, ge=1, le=10000000, description="Maximum number of packets to capture")
-    max_concurrent_captures: int = Field(default=2, ge=1, le=8, description="Maximum concurrent captures")
+    max_duration_seconds: int = Field(
+        default=60, ge=1, le=86400, description="Maximum capture duration in seconds"
+    )
+    max_file_size_mib: int = Field(
+        default=100, ge=1, le=10240, description="Maximum file size in MiB"
+    )
+    max_packets: int = Field(
+        default=100000, ge=1, le=10000000, description="Maximum number of packets to capture"
+    )
+    max_concurrent_captures: int = Field(
+        default=2, ge=1, le=8, description="Maximum concurrent captures"
+    )
 
     model_config = ConfigDict(extra="forbid")
 
@@ -78,9 +90,13 @@ class CaptureConfig(BaseModel):
     interface_id: str = Field(..., description="Interface identifier to capture from")
     capture_filter: CaptureFilter = Field(default_factory=CaptureFilter)
     limits: CaptureLimits = Field(default_factory=CaptureLimits)
-    output_directory: Optional[str] = Field(default=None, description="Custom output directory (relative to data root)")
+    output_directory: Optional[str] = Field(
+        default=None, description="Custom output directory (relative to data root)"
+    )
     ring_buffer: bool = Field(default=False, description="Enable ring buffer with multiple files")
-    ring_buffer_files: int = Field(default=5, ge=2, le=50, description="Number of ring buffer files")
+    ring_buffer_files: int = Field(
+        default=5, ge=2, le=50, description="Number of ring buffer files"
+    )
 
     model_config = ConfigDict(extra="forbid")
 
@@ -105,10 +121,16 @@ class CaptureResult(BaseModel):
     packet_count: int = Field(default=0, description="Total packets in capture")
     dropped_packets: int = Field(default=0, description="Packets dropped by the capture engine")
     dropped_by_interface: int = Field(default=0, description="Packets dropped by the interface")
-    tshark_version: Optional[str] = Field(default=None, description="TShark version used for analysis")
-    dumpcap_version: Optional[str] = Field(default=None, description="Dumpcap version used for capture")
+    tshark_version: Optional[str] = Field(
+        default=None, description="TShark version used for analysis"
+    )
+    dumpcap_version: Optional[str] = Field(
+        default=None, description="Dumpcap version used for capture"
+    )
     error: Optional[str] = Field(default=None, description="Error message if failed")
-    environment: str = Field(default="native", description="Capture environment: 'native' or 'docker'")
+    environment: str = Field(
+        default="native", description="Capture environment: 'native' or 'docker'"
+    )
     is_docker: bool = Field(default=False, description="Whether capture was performed in Docker")
 
     model_config = ConfigDict(extra="forbid")
@@ -197,10 +219,14 @@ class PacketDetail(BaseModel):
     info: str
     layers: list[dict] = Field(default_factory=list, description="Protocol layer tree")
     hex_dump: str = Field(default="", description="Hex/ASCII dump of packet bytes")
-    original_length: int = Field(default=0, description="Original packet length on wire (frame.len)")
+    original_length: int = Field(
+        default=0, description="Original packet length on wire (frame.len)"
+    )
     captured_length: int = Field(default=0, description="Captured packet length (frame.caplen)")
     extracted_length: int = Field(default=0, description="Bytes actually extracted from hex dump")
-    hex_dump_error: Optional[str] = Field(default=None, description="Error message if hex dump extraction failed")
+    hex_dump_error: Optional[str] = Field(
+        default=None, description="Error message if hex dump extraction failed"
+    )
 
     model_config = ConfigDict(extra="forbid")
 
