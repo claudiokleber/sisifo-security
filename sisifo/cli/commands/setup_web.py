@@ -5,7 +5,9 @@ from sisifo.core.config import set_web_password
 
 console = Console(markup=False)
 
-app = typer.Typer(help="Configurar senha da interface web.", no_args_is_help=False, invoke_without_command=True)
+app = typer.Typer(
+    help="Configurar senha da interface web.", no_args_is_help=False, invoke_without_command=True
+)
 
 
 @app.callback(invoke_without_command=True)

@@ -69,7 +69,10 @@ def test_no_color_disables_controls_even_on_terminal(monkeypatch):
 def test_panel_width_with_accents_combining_and_long_values(monkeypatch):
     monkeypatch.setattr(ui, "_width", lambda stream: 48)
     output = Output()
-    ui.panel([("Versão", "São Paulo"), ("Análise", "a\u0301" * 80), ("Dados", "C:/" + "x" * 100)], stream=output)
+    ui.panel(
+        [("Versão", "São Paulo"), ("Análise", "a\u0301" * 80), ("Dados", "C:/" + "x" * 100)],
+        stream=output,
+    )
     lines = [line for line in output.getvalue().splitlines() if line]
     assert len({ui.visible_len(line) for line in lines}) == 1
     assert all(ui.visible_len(line) <= 48 for line in lines)

@@ -119,13 +119,18 @@ class NetworkService:
                     control.check()
                     if time.monotonic() >= deadline:
                         raise ValueError("Ferramenta excedeu o limite de tempo")
-                    if os.fstat(stdout.fileno()).st_size > 32 * 1024 * 1024 or os.fstat(stderr.fileno()).st_size > 1024 * 1024:
+                    if (
+                        os.fstat(stdout.fileno()).st_size > 32 * 1024 * 1024
+                        or os.fstat(stderr.fileno()).st_size > 1024 * 1024
+                    ):
                         raise ValueError("SaÃ­da da ferramenta excedeu o limite")
                     if proc.poll() is not None:
                         break
                     control.cancelled.wait(0.05)
                 if proc.returncode != 0:
-                    raise ValueError(f"Ferramenta rejeitou arquivo/filtro ou falhou (cÃ³digo {proc.returncode})")
+                    raise ValueError(
+                        f"Ferramenta rejeitou arquivo/filtro ou falhou (cÃ³digo {proc.returncode})"
+                    )
                 stdout.seek(0)
                 return stdout.read().decode("utf-8", errors="replace")
             except BudgetExceeded:
@@ -170,7 +175,9 @@ class NetworkService:
             libpcap_version = self._get_libpcap_version()
 
         interfaces = self._discover_interfaces(dumpcap_path)
-        capture_permissions, permission_details = self._check_capture_permissions(dumpcap_path, platform, is_docker)
+        capture_permissions, permission_details = self._check_capture_permissions(
+            dumpcap_path, platform, is_docker
+        )
 
         storage_path = str(self.captures_dir)
         storage_available_mib = self._get_available_storage_mib(self.captures_dir)
@@ -303,12 +310,14 @@ class NetworkService:
                 if match:
                     iface_id = match.group(1)
                     description = match.group(2)
-                    interfaces.append(NetworkInterface(
-                        id=iface_id,
-                        name=description,
-                        description=description,
-                        loopback="loopback" in description.lower() or "lo" in iface_id.lower(),
-                    ))
+                    interfaces.append(
+                        NetworkInterface(
+                            id=iface_id,
+                            name=description,
+                            description=description,
+                            loopback="loopback" in description.lower() or "lo" in iface_id.lower(),
+                        )
+                    )
         except Exception:
             pass
         return interfaces
@@ -342,7 +351,10 @@ class NetworkService:
                 # Check if running as root
                 if os.geteuid() == 0:
                     return True, "Linux: executando como root"
-                return False, "Linux: dumpcap precisa de capabilities (cap_net_admin, cap_net_raw) ou root"
+                return (
+                    False,
+                    "Linux: dumpcap precisa de capabilities (cap_net_admin, cap_net_raw) ou root",
+                )
             except Exception:
                 return False, "NÃ£o foi possÃ­vel verificar permissÃµes de captura"
 
@@ -391,11 +403,17 @@ class NetworkService:
         # Check storage
         max_size_mib = config.limits.max_file_size_mib
         if diagnostics.storage_available_mib < max_size_mib:
-            return False, f"EspaÃ§o insuficiente: {diagnostics.storage_available_mib} MiB disponÃ­veis, {max_size_mib} MiB necessÃ¡rios"
+            return (
+                False,
+                f"EspaÃ§o insuficiente: {diagnostics.storage_available_mib} MiB disponÃ­veis, {max_size_mib} MiB necessÃ¡rios",
+            )
 
         # Check concurrent captures
         if diagnostics.active_captures >= config.limits.max_concurrent_captures:
-            return False, f"Limite de capturas simultÃ¢neas atingido ({diagnostics.active_captures}/{config.limits.max_concurrent_captures})"
+            return (
+                False,
+                f"Limite de capturas simultÃ¢neas atingido ({diagnostics.active_captures}/{config.limits.max_concurrent_captures})",
+            )
 
         return True, "ConfiguraÃ§Ã£o vÃ¡lida"
 
@@ -417,7 +435,9 @@ class NetworkService:
             raise ValueError(msg)
 
         if config.ring_buffer or config.output_directory:
-            raise ValueError("RotaÃ§Ã£o e diretÃ³rio personalizado ainda nÃ£o suportados com seguranÃ§a")
+            raise ValueError(
+                "RotaÃ§Ã£o e diretÃ³rio personalizado ainda nÃ£o suportados com seguranÃ§a"
+            )
 
         # Create capture record
         capture_id = uuid4().hex
@@ -491,7 +511,9 @@ class NetworkService:
                     break
                 time.sleep(0.5)
                 if progress_callback:
-                    control.progress(f"Capturando... (tempo decorrido: {int(time.monotonic() - control.deadline + config.limits.max_duration_seconds)}s)")
+                    control.progress(
+                        f"Capturando... (tempo decorrido: {int(time.monotonic() - control.deadline + config.limits.max_duration_seconds)}s)"
+                    )
 
             control.check()
             if stop_file.exists():
@@ -655,7 +677,9 @@ class NetworkService:
             source=CaptureSource.IMPORTED,
             status=CaptureStatus.COMPLETED,
             created_at=datetime.now(UTC),
-            started_at=datetime.fromisoformat(info.get("start_time", datetime.now(UTC).isoformat())),
+            started_at=datetime.fromisoformat(
+                info.get("start_time", datetime.now(UTC).isoformat())
+            ),
             finished_at=datetime.fromisoformat(info.get("end_time", datetime.now(UTC).isoformat())),
             capture_filter=info.get("capture_filter"),
             display_filter="",
@@ -701,7 +725,11 @@ class NetworkService:
 
     def _rows(self, capture_id, display_filter=None, control=None):
         result = self.get_capture(capture_id)
-        if result.status not in {CaptureStatus.COMPLETED, CaptureStatus.PARTIAL, CaptureStatus.CANCELLED}:
+        if result.status not in {
+            CaptureStatus.COMPLETED,
+            CaptureStatus.PARTIAL,
+            CaptureStatus.CANCELLED,
+        }:
             raise ValueError("Captura nÃ£o finalizada")
         path = self._capture_file(result)
         if not path.is_file():
@@ -713,7 +741,9 @@ class NetworkService:
         if not diag.tshark_path:
             raise ValueError("tshark nÃ£o encontrado")
         expression = display_filter.expression if display_filter else ""
-        key = hashlib.sha256(json.dumps([2, fingerprint, expression, diag.tshark_version]).encode()).hexdigest()
+        key = hashlib.sha256(
+            json.dumps([2, fingerprint, expression, diag.tshark_version]).encode()
+        ).hexdigest()
         folder = self._path(self.indexes_dir, self._id(capture_id))
         folder.mkdir(exist_ok=True)
         cache = self._path(folder, key + ".json")
@@ -722,13 +752,42 @@ class NetworkService:
                 return json.loads(cache.read_text(encoding="utf-8"))
             except (ValueError, OSError):
                 pass
-        fields = ["frame.number", "frame.time_relative", "frame.time_epoch", "ip.src", "ip.dst",
-                  "ipv6.src", "ipv6.dst", "eth.src", "eth.dst", "_ws.col.Protocol", "frame.len",
-                  "_ws.col.Info", "tcp.srcport", "tcp.dstport", "udp.srcport", "udp.dstport",
-                  "dns.qry.name", "tcp.analysis.retransmission", "tcp.analysis.out_of_order",
-                  "tcp.analysis.zero_window"]
-        cmd = [diag.tshark_path, "-n", "-r", str(path), "-T", "fields",
-               "-E", "separator=,", "-E", "quote=d", "-E", "occurrence=f"]
+        fields = [
+            "frame.number",
+            "frame.time_relative",
+            "frame.time_epoch",
+            "ip.src",
+            "ip.dst",
+            "ipv6.src",
+            "ipv6.dst",
+            "eth.src",
+            "eth.dst",
+            "_ws.col.Protocol",
+            "frame.len",
+            "_ws.col.Info",
+            "tcp.srcport",
+            "tcp.dstport",
+            "udp.srcport",
+            "udp.dstport",
+            "dns.qry.name",
+            "tcp.analysis.retransmission",
+            "tcp.analysis.out_of_order",
+            "tcp.analysis.zero_window",
+        ]
+        cmd = [
+            diag.tshark_path,
+            "-n",
+            "-r",
+            str(path),
+            "-T",
+            "fields",
+            "-E",
+            "separator=,",
+            "-E",
+            "quote=d",
+            "-E",
+            "occurrence=f",
+        ]
         for field in fields:
             cmd.extend(["-e", field])
         if expression:
@@ -744,14 +803,18 @@ class NetworkService:
         atomic_write(cache, json.dumps(rows, ensure_ascii=False))
         return rows
 
-    def analyze_capture(self, capture_id, display_filter=None, control=None, progress_callback=None):
+    def analyze_capture(
+        self, capture_id, display_filter=None, control=None, progress_callback=None
+    ):
         self._rows(capture_id, display_filter, control)
         return self.get_capture(capture_id)
 
     @staticmethod
     def _addresses(row):
-        return (row["ip.src"] or row["ipv6.src"] or row["eth.src"],
-                row["ip.dst"] or row["ipv6.dst"] or row["eth.dst"])
+        return (
+            row["ip.src"] or row["ipv6.src"] or row["eth.src"],
+            row["ip.dst"] or row["ipv6.dst"] or row["eth.dst"],
+        )
 
     def get_protocol_stats(self, capture_id, display_filter=None, control=None):
         rows = self._rows(capture_id, display_filter, control)
@@ -761,35 +824,64 @@ class NetworkService:
             group = groups.setdefault(row["_ws.col.Protocol"], [0, 0])
             group[0] += 1
             group[1] += int(row["frame.len"])
-        return ProtocolStats(capture_id=capture_id, total_packets=len(rows), total_bytes=total_bytes,
-            by_protocol=[ProtocolHierarchyItem(protocol=name, packets=counts[0], bytes=counts[1],
-                percentage_packets=100 * counts[0] / len(rows),
-                percentage_bytes=100 * counts[1] / total_bytes if total_bytes else 0)
-                for name, counts in sorted(groups.items())])
+        return ProtocolStats(
+            capture_id=capture_id,
+            total_packets=len(rows),
+            total_bytes=total_bytes,
+            by_protocol=[
+                ProtocolHierarchyItem(
+                    protocol=name,
+                    packets=counts[0],
+                    bytes=counts[1],
+                    percentage_packets=100 * counts[0] / len(rows),
+                    percentage_bytes=100 * counts[1] / total_bytes if total_bytes else 0,
+                )
+                for name, counts in sorted(groups.items())
+            ],
+        )
 
     def get_endpoints(self, capture_id, display_filter=None, control=None):
         endpoints = {}
         for row in self._rows(capture_id, display_filter, control):
             src, dst = self._addresses(row)
             for address, direction in [(src, "tx"), (dst, "rx")]:
-                ep = endpoints.setdefault(address, EndpointStats(address=address,
-                    type="IPv4" if row["ip.src"] else "IPv6" if row["ipv6.src"] else "Ethernet"))
+                ep = endpoints.setdefault(
+                    address,
+                    EndpointStats(
+                        address=address,
+                        type="IPv4" if row["ip.src"] else "IPv6" if row["ipv6.src"] else "Ethernet",
+                    ),
+                )
                 setattr(ep, "packets_" + direction, getattr(ep, "packets_" + direction) + 1)
-                setattr(ep, "bytes_" + direction, getattr(ep, "bytes_" + direction) + int(row["frame.len"]))
+                setattr(
+                    ep,
+                    "bytes_" + direction,
+                    getattr(ep, "bytes_" + direction) + int(row["frame.len"]),
+                )
         return sorted(endpoints.values(), key=lambda e: e.bytes_rx + e.bytes_tx, reverse=True)
 
     def get_conversations(self, capture_id, display_filter=None, control=None):
         conversations = {}
         for row in self._rows(capture_id, display_filter, control):
             src, dst = self._addresses(row)
-            protocol = "TCP" if row["tcp.srcport"] else "UDP" if row["udp.srcport"] else row["_ws.col.Protocol"]
+            protocol = (
+                "TCP"
+                if row["tcp.srcport"]
+                else "UDP"
+                if row["udp.srcport"]
+                else row["_ws.col.Protocol"]
+            )
             if protocol in {"TCP", "UDP"}:
                 src = f"[{src}]:{row[protocol.lower() + '.srcport']}"
                 dst = f"[{dst}]:{row[protocol.lower() + '.dstport']}"
             a, b = sorted([src, dst])
             t = float(row["frame.time_relative"])
-            conv = conversations.setdefault((protocol, a, b), ConversationStats(
-                endpoint_a=a, endpoint_b=b, protocol=protocol, start_time=t, end_time=t))
+            conv = conversations.setdefault(
+                (protocol, a, b),
+                ConversationStats(
+                    endpoint_a=a, endpoint_b=b, protocol=protocol, start_time=t, end_time=t
+                ),
+            )
             size = int(row["frame.len"])
             conv.packets += 1
             conv.bytes += size
@@ -813,13 +905,22 @@ class NetworkService:
         if offset < 0 or not 1 <= limit <= 1000:
             raise ValueError("PaginaÃ§Ã£o invÃ¡lida")
         packets = []
-        for row in self._rows(capture_id, display_filter, control)[offset:offset + limit]:
+        for row in self._rows(capture_id, display_filter, control)[offset : offset + limit]:
             src, dst = self._addresses(row)
-            packets.append(PacketSummary(number=int(row["frame.number"]),
-                time=float(row["frame.time_relative"]),
-                time_iso=datetime.fromtimestamp(float(row["frame.time_epoch"]), UTC).isoformat(),
-                source=src, destination=dst, protocol=row["_ws.col.Protocol"],
-                length=int(row["frame.len"]), info=row["_ws.col.Info"]))
+            packets.append(
+                PacketSummary(
+                    number=int(row["frame.number"]),
+                    time=float(row["frame.time_relative"]),
+                    time_iso=datetime.fromtimestamp(
+                        float(row["frame.time_epoch"]), UTC
+                    ).isoformat(),
+                    source=src,
+                    destination=dst,
+                    protocol=row["_ws.col.Protocol"],
+                    length=int(row["frame.len"]),
+                    info=row["_ws.col.Info"],
+                )
+            )
         return packets
 
     def get_packet_detail(
@@ -843,9 +944,12 @@ class NetworkService:
         cmd_json = [
             diagnostics.tshark_path,
             "-n",
-            "-r", str(capture_file),
-            "-Y", f"frame.number == {packet_number}",
-            "-T", "json",
+            "-r",
+            str(capture_file),
+            "-Y",
+            f"frame.number == {packet_number}",
+            "-T",
+            "json",
         ]
 
         output = self._run_tool(cmd_json, control=control, timeout=30)
@@ -898,7 +1002,9 @@ class NetworkService:
         ip_layers = ip if isinstance(ip, list) else [ip] if ip else []
         for ip_layer in ip_layers:
             if isinstance(ip_layer, dict):
-                info_parts.append(f"IP {ip_layer.get('ip.src', '')} => {ip_layer.get('ip.dst', '')}")
+                info_parts.append(
+                    f"IP {ip_layer.get('ip.src', '')} => {ip_layer.get('ip.dst', '')}"
+                )
         if ipv6:
             info_parts.append(f"IPv6 {ipv6.get('ipv6.src', '')} => {ipv6.get('ipv6.dst', '')}")
         info = " / ".join(info_parts) if info_parts else ""
@@ -909,7 +1015,9 @@ class NetworkService:
         dst = first_ip.get("ip.dst") or ipv6.get("ipv6.dst") or eth.get("eth.dst") or ""
 
         # Determine protocol (highest layer)
-        protocol = frame.get("frame.protocols", "").split(":")[-1] if frame.get("frame.protocols") else ""
+        protocol = (
+            frame.get("frame.protocols", "").split(":")[-1] if frame.get("frame.protocols") else ""
+        )
         if not protocol:
             for proto in ["tcp", "udp", "icmp", "dns", "http", "tls", "ssh", "arp"]:
                 if proto in packet_data:
@@ -930,8 +1038,10 @@ class NetworkService:
         cmd_hex = [
             diagnostics.tshark_path,
             "-n",
-            "-r", str(capture_file),
-            "-Y", f"frame.number == {packet_number}",
+            "-r",
+            str(capture_file),
+            "-Y",
+            f"frame.number == {packet_number}",
             "-x",  # Hex dump
         ]
         try:
@@ -962,14 +1072,24 @@ class NetworkService:
         )
 
     def get_dns_summary(self, capture_id, display_filter=None, control=None):
-        return {"queries": [{"packet": int(r["frame.number"]), "name": r["dns.qry.name"]}
-                for r in self._rows(capture_id, display_filter, control) if r["dns.qry.name"]]}
+        return {
+            "queries": [
+                {"packet": int(r["frame.number"]), "name": r["dns.qry.name"]}
+                for r in self._rows(capture_id, display_filter, control)
+                if r["dns.qry.name"]
+            ]
+        }
 
     def get_tcp_summary(self, capture_id, display_filter=None, control=None):
         rows = self._rows(capture_id, display_filter, control)
-        return {name: sum(bool(r[field]) for r in rows) for name, field in [
-            ("retransmissions", "tcp.analysis.retransmission"),
-            ("out_of_order", "tcp.analysis.out_of_order"), ("zero_window", "tcp.analysis.zero_window")]}
+        return {
+            name: sum(bool(r[field]) for r in rows)
+            for name, field in [
+                ("retransmissions", "tcp.analysis.retransmission"),
+                ("out_of_order", "tcp.analysis.out_of_order"),
+                ("zero_window", "tcp.analysis.zero_window"),
+            ]
+        }
 
     def generate_report(self, capture_id: str, display_filter: Optional[DisplayFilter] = None):
         """Generate a complete capture analysis report."""
@@ -1110,7 +1230,9 @@ class NetworkService:
     def list_captures(self, limit: int = 50) -> list[CaptureResult]:
         """List recent captures."""
         captures = []
-        for metadata_file in sorted(self.captures_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        for metadata_file in sorted(
+            self.captures_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True
+        ):
             if len(captures) >= limit:
                 break
             try:
@@ -1192,7 +1314,13 @@ class NetworkService:
         pseudo_protocols = {"ethertype"}
 
         available_by_name: dict[str, deque[tuple[str, dict]]] = defaultdict(deque)
-        metadata_keys = {"frame.protocols", "frame.raw", "frame.encap_type", "frame_raw", "frame.encoding"}
+        metadata_keys = {
+            "frame.protocols",
+            "frame.raw",
+            "frame.encap_type",
+            "frame_raw",
+            "frame.encoding",
+        }
 
         items = packet_data._pairs if hasattr(packet_data, "_pairs") else packet_data.items()
         for key, value in items:
@@ -1209,7 +1337,9 @@ class NetworkService:
         # Root FRAME layer always comes first
         if available_by_name.get("frame"):
             orig_name, frame_dict = available_by_name["frame"].popleft()
-            layers.append({"name": "FRAME", "fields": self._extract_layer_fields(orig_name, frame_dict)})
+            layers.append(
+                {"name": "FRAME", "fields": self._extract_layer_fields(orig_name, frame_dict)}
+            )
 
         # Traverse encapsulation sequence
         for proto in protocol_order:
@@ -1221,20 +1351,35 @@ class NetworkService:
             if proto_lower in pseudo_protocols:
                 if available_by_name.get(proto_lower):
                     orig_name, layer_dict = available_by_name[proto_lower].popleft()
-                    layers.append({"name": proto.upper(), "fields": self._extract_layer_fields(orig_name, layer_dict)})
+                    layers.append(
+                        {
+                            "name": proto.upper(),
+                            "fields": self._extract_layer_fields(orig_name, layer_dict),
+                        }
+                    )
                 continue
 
             # Direct match
             if available_by_name.get(proto_lower):
                 orig_name, layer_dict = available_by_name[proto_lower].popleft()
-                layers.append({"name": proto.upper(), "fields": self._extract_layer_fields(orig_name, layer_dict)})
+                layers.append(
+                    {
+                        "name": proto.upper(),
+                        "fields": self._extract_layer_fields(orig_name, layer_dict),
+                    }
+                )
                 continue
 
             # Mapped alias
             mapped = protocol_to_layer.get(proto_lower)
             if mapped and mapped != proto_lower and available_by_name.get(mapped):
                 orig_name, layer_dict = available_by_name[mapped].popleft()
-                layers.append({"name": proto.upper(), "fields": self._extract_layer_fields(orig_name, layer_dict)})
+                layers.append(
+                    {
+                        "name": proto.upper(),
+                        "fields": self._extract_layer_fields(orig_name, layer_dict),
+                    }
+                )
                 continue
 
             # Missing layer in data: do not invent absent layers
@@ -1243,7 +1388,12 @@ class NetworkService:
         for name, queue in available_by_name.items():
             while queue:
                 orig_name, layer_dict = queue.popleft()
-                layers.append({"name": orig_name.upper(), "fields": self._extract_layer_fields(orig_name, layer_dict)})
+                layers.append(
+                    {
+                        "name": orig_name.upper(),
+                        "fields": self._extract_layer_fields(orig_name, layer_dict),
+                    }
+                )
 
         return layers
 
@@ -1252,7 +1402,13 @@ class NetworkService:
     ) -> list[str]:
         """Extract formatted fields from a protocol layer."""
         fields = []
-        metadata_keys = {"frame.protocols", "frame.raw", "frame.encap_type", "frame_raw", "frame.encoding"}
+        metadata_keys = {
+            "frame.protocols",
+            "frame.raw",
+            "frame.encap_type",
+            "frame_raw",
+            "frame.encoding",
+        }
         items = layer_data._pairs if hasattr(layer_data, "_pairs") else layer_data.items()
         for key, value in items:
             if key in metadata_keys:
@@ -1261,7 +1417,9 @@ class NetworkService:
             if isinstance(value, list):
                 for item in value:
                     if isinstance(item, dict):
-                        fields.extend(self._format_nested_fields(key, item, depth=1, max_depth=max_depth))
+                        fields.extend(
+                            self._format_nested_fields(key, item, depth=1, max_depth=max_depth)
+                        )
                     else:
                         fields.append(f"{field_name}: {item}")
             elif isinstance(value, dict):
@@ -1280,7 +1438,9 @@ class NetworkService:
     ) -> list[str]:
         """Format nested dictionary fields for protocol tree."""
         if depth > max_depth:
-            return ["  " * depth + f"{prefix.replace('.', ' ')}: ... [profundidade máxima atingida]"]
+            return [
+                "  " * depth + f"{prefix.replace('.', ' ')}: ... [profundidade máxima atingida]"
+            ]
         fields = []
         items = data._pairs if hasattr(data, "_pairs") else data.items()
         for key, value in items:

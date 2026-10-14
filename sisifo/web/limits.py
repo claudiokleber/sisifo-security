@@ -26,7 +26,9 @@ class RequestLimits:
         except ValueError:
             excessive = True
         if excessive:
-            return await JSONResponse({"detail": "Corpo da requisição excede o limite."}, 413)(scope, receive, send)
+            return await JSONResponse({"detail": "Corpo da requisição excede o limite."}, 413)(
+                scope, receive, send
+            )
         if scope["path"] == "/login" and scope["method"] == "POST":
             with self._lock:
                 now = time.monotonic()
@@ -35,8 +37,11 @@ class RequestLimits:
                 if not throttled:
                     self._attempts.append(now)
             if throttled:
-                return await JSONResponse({"detail": "Aguarde antes de tentar novamente."}, 429)(scope, receive, send)
+                return await JSONResponse({"detail": "Aguarde antes de tentar novamente."}, 429)(
+                    scope, receive, send
+                )
         size = 0
+
         async def limited_receive():
             nonlocal size
             message = await receive()
@@ -44,7 +49,10 @@ class RequestLimits:
             if size > limit:
                 raise BodyTooLarge()
             return message
+
         try:
             await self.app(scope, limited_receive, send)
         except BodyTooLarge:
-            await JSONResponse({"detail": "Corpo da requisição excede o limite."}, 413)(scope, receive, send)
+            await JSONResponse({"detail": "Corpo da requisição excede o limite."}, 413)(
+                scope, receive, send
+            )

@@ -1,6 +1,12 @@
 import pytest
 
 
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    setattr(item, "rep_" + call.when, outcome.get_result())
+
+
 @pytest.fixture(autouse=True)
 def private_test_environment(tmp_path, monkeypatch):
     monkeypatch.setenv("SISIFO_DATA_DIR", str(tmp_path / "data"))

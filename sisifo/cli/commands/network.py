@@ -38,16 +38,22 @@ def doctor():
     console.print(f"Plataforma: {diag.platform}")
     console.print(f"Docker: {'sim' if diag.is_docker else 'não'}")
     console.print(f"Armazenamento: {diag.storage_path} ({diag.storage_available_mib} MiB livres)")
-    console.print(f"Permissão de captura: {'sim' if diag.capture_permissions else 'não'} - {diag.permission_details}")
+    console.print(
+        f"Permissão de captura: {'sim' if diag.capture_permissions else 'não'} - {diag.permission_details}"
+    )
     console.print()
 
     if diag.dumpcap_path:
-        console.print(f"dumpcap: {diag.dumpcap_path} ({diag.dumpcap_version or 'versão desconhecida'})")
+        console.print(
+            f"dumpcap: {diag.dumpcap_path} ({diag.dumpcap_version or 'versão desconhecida'})"
+        )
     else:
         console.print("dumpcap: não encontrado")
 
     if diag.tshark_path:
-        console.print(f"tshark: {diag.tshark_path} ({diag.tshark_version or 'versão desconhecida'})")
+        console.print(
+            f"tshark: {diag.tshark_path} ({diag.tshark_version or 'versão desconhecida'})"
+        )
     else:
         console.print("tshark: não encontrado")
 
@@ -73,7 +79,9 @@ def doctor():
     console.print(f"Capturas recentes: {len(diag.recent_captures)}")
 
     if not diag.dumpcap_path or not diag.tshark_path:
-        console.print("\n[red]Dependências ausentes: instale Wireshark/TShark para funcionalidade completa.[/red]")
+        console.print(
+            "\n[red]Dependências ausentes: instale Wireshark/TShark para funcionalidade completa.[/red]"
+        )
         raise typer.Exit(1)
 
 
@@ -84,7 +92,9 @@ def interfaces():
     diag = service.discover_tools()
 
     if not diag.interfaces:
-        console.print("Nenhuma interface encontrada. Verifique se dumpcap está instalado e acessível.")
+        console.print(
+            "Nenhuma interface encontrada. Verifique se dumpcap está instalado e acessível."
+        )
         raise typer.Exit(1)
 
     table = Table(title="Interfaces de Rede")
@@ -110,7 +120,9 @@ def interfaces():
 
 @app.command()
 def import_pcap(
-    file: Path = typer.Argument(..., help="Arquivo PCAP/PCAPNG para importar", exists=True, readable=True),
+    file: Path = typer.Argument(
+        ..., help="Arquivo PCAP/PCAPNG para importar", exists=True, readable=True
+    ),
 ):
     """Importa e valida um arquivo PCAP/PCAPNG."""
     service = get_service()
@@ -217,7 +229,9 @@ def show(capture_id: str = typer.Argument(..., help="ID da captura")):
 @app.command()
 def packets(
     capture_id: str = typer.Argument(..., help="ID da captura"),
-    display_filter: Optional[str] = typer.Option(None, "--display-filter", "-Y", help="Filtro de exibição (sintaxe Wireshark)"),
+    display_filter: Optional[str] = typer.Option(
+        None, "--display-filter", "-Y", help="Filtro de exibição (sintaxe Wireshark)"
+    ),
     offset: int = typer.Option(0, "--offset", "-o", help="Deslocamento inicial"),
     limit: int = typer.Option(100, "--limit", "-n", help="Número máximo de pacotes"),
 ):
@@ -276,7 +290,7 @@ def detail(
         console.print("--- Árvore de Protocolos ---")
         for layer in detail.layers:
             console.print(f"  {layer['name']}")
-            for field in layer.get('fields', []):
+            for field in layer.get("fields", []):
                 console.print(f"    {field}")
 
     if detail.hex_dump:
@@ -288,7 +302,9 @@ def detail(
 @app.command()
 def stats(
     capture_id: str = typer.Argument(..., help="ID da captura"),
-    display_filter: Optional[str] = typer.Option(None, "--display-filter", "-Y", help="Filtro de exibição (sintaxe Wireshark)"),
+    display_filter: Optional[str] = typer.Option(
+        None, "--display-filter", "-Y", help="Filtro de exibição (sintaxe Wireshark)"
+    ),
 ):
     """Mostra estatísticas de protocolos, endpoints e conversações."""
     service = get_service()
@@ -302,7 +318,9 @@ def stats(
         print("Protocolo                    Pacotes  % Pacotes  Bytes    % Bytes")
         print("-" * 65)
         for item in proto_stats.by_protocol:
-            print(f"{item.protocol:<28} {item.packets:>8,}  {item.percentage_packets:>8.1f}%  {item.bytes:>8,}  {item.percentage_bytes:>7.1f}%")
+            print(
+                f"{item.protocol:<28} {item.packets:>8,}  {item.percentage_packets:>8.1f}%  {item.bytes:>8,}  {item.percentage_bytes:>7.1f}%"
+            )
         print(f"Total: {proto_stats.total_packets:,} pacotes, {proto_stats.total_bytes:,} bytes")
         print()
 
@@ -311,21 +329,27 @@ def stats(
         print("Endereco                          Tipo      RX Pkts  TX Pkts  RX Bytes    TX Bytes")
         print("-" * 75)
         for ep in endpoints:
-            print(f"{ep.address:<32} {ep.type:<8} {ep.packets_rx:>8,} {ep.packets_tx:>8,} {ep.bytes_rx:>10,} {ep.bytes_tx:>10,}")
+            print(
+                f"{ep.address:<32} {ep.type:<8} {ep.packets_rx:>8,} {ep.packets_tx:>8,} {ep.bytes_rx:>10,} {ep.bytes_tx:>10,}"
+            )
         print()
 
         console.print("[bold]Conversações (Top 20)[/bold]")
         conversations = service.get_conversations(capture_id, display_filter=df)[:20]
         # Use simple print to avoid encoding issues
-        print("A <=> B                                    Protocolo  Pacotes  Bytes      Duracao (s)")
+        print(
+            "A <=> B                                    Protocolo  Pacotes  Bytes      Duracao (s)"
+        )
         print("-" * 80)
         for conv in conversations:
-            print(f"{conv.endpoint_a} <=> {conv.endpoint_b:<35} {conv.protocol:<10} {conv.packets:>8,}  {conv.bytes:>10,}  {conv.duration:.3f}")
+            print(
+                f"{conv.endpoint_a} <=> {conv.endpoint_b:<35} {conv.protocol:<10} {conv.packets:>8,}  {conv.bytes:>10,}  {conv.duration:.3f}"
+            )
         print()
 
         dns = service.get_dns_summary(capture_id, display_filter=df)
         console.print(f"[bold]DNS:[/bold] {len(dns.get('queries', []))} consultas")
-        for q in dns.get('queries', [])[:10]:
+        for q in dns.get("queries", [])[:10]:
             console.print(f"  {q}")
 
         tcp = service.get_tcp_summary(capture_id, display_filter=df)
@@ -343,7 +367,9 @@ def stats(
 @app.command()
 def report(
     capture_id: str = typer.Argument(..., help="ID da captura"),
-    display_filter: Optional[str] = typer.Option(None, "--display-filter", "-Y", help="Filtro de exibição (sintaxe Wireshark)"),
+    display_filter: Optional[str] = typer.Option(
+        None, "--display-filter", "-Y", help="Filtro de exibição (sintaxe Wireshark)"
+    ),
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="Arquivo de saída (JSON)"),
 ):
     """Gera relatório determinístico completo da captura."""
@@ -392,10 +418,14 @@ def capture(
     duration: int = typer.Option(60, "--duration", "-d", help="Duração máxima em segundos"),
     max_size_mib: int = typer.Option(100, "--max-size", help="Tamanho máximo do arquivo em MiB"),
     max_packets: int = typer.Option(100000, "--max-packets", help="Número máximo de pacotes"),
-    capture_filter: Optional[str] = typer.Option(None, "--capture-filter", "-f", help="Filtro de captura (BPF)"),
+    capture_filter: Optional[str] = typer.Option(
+        None, "--capture-filter", "-f", help="Filtro de captura (BPF)"
+    ),
     ring_buffer: bool = typer.Option(False, "--ring-buffer", help="Habilitar buffer circular"),
     ring_files: int = typer.Option(5, "--ring-files", help="Número de arquivos no buffer circular"),
-    output_dir: Optional[str] = typer.Option(None, "--output-dir", help="Diretório de saída relativo ao data root"),
+    output_dir: Optional[str] = typer.Option(
+        None, "--output-dir", help="Diretório de saída relativo ao data root"
+    ),
     no_confirm: bool = typer.Option(False, "--yes", "-y", help="Não pedir confirmação"),
 ):
     """Inicia captura de pacotes na interface especificada (usa Dumpcap)."""
@@ -425,7 +455,10 @@ def capture(
     console.print(f"  Tamanho máximo: {max_size_mib} MiB")
     console.print(f"  Pacotes máximos: {max_packets:,}")
     console.print(f"  Filtro de captura (BPF): {capture_filter or '(nenhum)'}")
-    console.print(f"  Buffer circular: {'sim' if ring_buffer else 'não'}" + (f" ({ring_files} arquivos)" if ring_buffer else ""))
+    console.print(
+        f"  Buffer circular: {'sim' if ring_buffer else 'não'}"
+        + (f" ({ring_files} arquivos)" if ring_buffer else "")
+    )
     console.print()
 
     if not no_confirm:

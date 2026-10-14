@@ -1,4 +1,3 @@
-
 """
 Interactive menu for Sísifo.
 Provides a Rich‑based terminal UI with ASCII banner, navigation and submenus.
@@ -35,29 +34,39 @@ console = Console()
 # Terminal branding
 # ---------------------------------------------------------------------------
 
+
 def _use_colors() -> bool:
     """Respect NO_COLOR and non‑tty output."""
     if "NO_COLOR" in os.environ:
         return False
     return sys.stdout.isatty()
 
+
 def _print_banner(version: str) -> None:
     ui.banner(version)
+
 
 # ---------------------------------------------------------------------------
 # Helper – run a sub‑command function and show result
 # ---------------------------------------------------------------------------
 def _run_and_show(func, *args, **kwargs):
     try:
-        labels = {execute_scan: "Coletando evidências", analyze_session: "Analisando evidências",
-                  build_report: "Gerando relatório"}
+        labels = {
+            execute_scan: "Coletando evidências",
+            analyze_session: "Analisando evidências",
+            build_report: "Gerando relatório",
+        }
         if func in labels:
             with ui.climb(labels[func]):
                 result = func(*args, **kwargs)
         else:
             result = func(*args, **kwargs)
-        status = result.get("status") if isinstance(result, dict) else getattr(result, "status", None)
-        (ui.warn if status in {"failed", "partial", "cancelled"} else ui.ok)(f"Estado: {status or 'concluído'}")
+        status = (
+            result.get("status") if isinstance(result, dict) else getattr(result, "status", None)
+        )
+        (ui.warn if status in {"failed", "partial", "cancelled"} else ui.ok)(
+            f"Estado: {status or 'concluído'}"
+        )
         if result:
             console.print(result)
         return result
@@ -67,9 +76,11 @@ def _run_and_show(func, *args, **kwargs):
     except Exception as exc:  # pragma: no cover – safety net
         ui.error(f"Erro inesperado: {exc}")
 
+
 # ---------------------------------------------------------------------------
 # Sub‑menu implementations
 # ---------------------------------------------------------------------------
+
 
 def _submenu_executar():
     ui.section("Executar ferramentas")
@@ -98,7 +109,12 @@ def _submenu_executar():
     project = Prompt.ask("Projeto", default="default")
     timeout = IntPrompt.ask("Timeout (s)", default=600)
 
-    console.print(Panel(f"[bold]Resumo[/bold]\nMódulo: {mod_name}\nAlvo: {target}\nProjeto: {project}\nTimeout: {timeout}s", title="Confirmação"))
+    console.print(
+        Panel(
+            f"[bold]Resumo[/bold]\nMódulo: {mod_name}\nAlvo: {target}\nProjeto: {project}\nTimeout: {timeout}s",
+            title="Confirmação",
+        )
+    )
     if not typer.confirm("Iniciar execução?"):
         ui.info("Cancelado.")
         return
@@ -106,7 +122,10 @@ def _submenu_executar():
     result = _run_and_show(execute_scan, target, mod_name, project, timeout)
     if result:
         build_report(result.id)
-        console.print(f"Sessão: {result.id}; relatório: {store.session_dir(result.id) / 'reports/report.md'}")
+        console.print(
+            f"Sessão: {result.id}; relatório: {store.session_dir(result.id) / 'reports/report.md'}"
+        )
+
 
 def select_session():
     root = store.data_root() / "sessions"
@@ -119,13 +138,15 @@ def select_session():
         if path.is_dir():
             try:
                 session = store.load_session(path.name)
-                if (not project or project == session.project) and (not status or status == session.status):
+                if (not project or project == session.project) and (
+                    not status or status == session.status
+                ):
                     sessions.append(session)
             except ValueError:
                 console.print(f"Sessão inválida ignorada: {path.name}", markup=False)
     page = 0
     while True:
-        selected = sessions[page * 10:(page + 1) * 10]
+        selected = sessions[page * 10 : (page + 1) * 10]
         if not selected:
             console.print("Nenhuma sessão encontrada.")
             return None
@@ -152,17 +173,25 @@ def _submenu_sessoes():
     if not session_id:
         return
     while True:
-        choice = Prompt.ask("[1] Detalhes [2] Integridade [3] Recuperar [0] Voltar", choices=["0", "1", "2", "3"], default="0")
+        choice = Prompt.ask(
+            "[1] Detalhes [2] Integridade [3] Recuperar [0] Voltar",
+            choices=["0", "1", "2", "3"],
+            default="0",
+        )
         if choice == "0":
             return
         session = store.load_session(session_id)
         if choice == "1":
-            console.print(f"Sessão: {session.id}\nProjeto: {session.project}\nAlvo: {session.target}\nEstado: {session.status}", markup=False)
+            console.print(
+                f"Sessão: {session.id}\nProjeto: {session.project}\nAlvo: {session.target}\nEstado: {session.status}",
+                markup=False,
+            )
         elif choice == "2":
             findings = store.verified_findings(session)
             console.print(f"Integridade verificada: {len(findings)} evidências.")
         else:
             from sisifo.core.orchestrator import recover_session
+
             _run_and_show(recover_session, session_id)
 
 
@@ -178,7 +207,9 @@ def _submenu_relatorios():
         path = store.session_dir(sess_id) / "reports/report.md"
         console.print(f"Arquivo: {path}")
         if typer.confirm("Abrir no visualizador padrão?"):
-            os.startfile(path) if os.name == "nt" else subprocess.run(["open" if sys.platform == "darwin" else "xdg-open", str(path)], check=True)
+            os.startfile(path) if os.name == "nt" else subprocess.run(
+                ["open" if sys.platform == "darwin" else "xdg-open", str(path)], check=True
+            )
     except Exception as exc:
         console.print(f"[red]{exc}[/red]")
 
@@ -186,22 +217,33 @@ def _submenu_relatorios():
         other = Prompt.ask("ID da outra sessão")
         _run_and_show(compare_sessions, sess_id, other)
 
+
 def _submenu_ia():
     ui.section("Análise com IA")
     from sisifo.core.ai_connection import public_status
+
     state = public_status()
     console.print(f"Modelo: {state['model'] or 'não configurado'}")
-    choice = Prompt.ask("[1] Conversar [2] Analisar sessão [3] Conectar IA [0] Voltar",
-                        choices=["0", "1", "2", "3"], default="1")
+    choice = Prompt.ask(
+        "[1] Conversar [2] Analisar sessão [3] Conectar IA [0] Voltar",
+        choices=["0", "1", "2", "3"],
+        default="1",
+    )
     if choice == "0":
         return
     if choice == "3":
         from sisifo.cli.commands.ai_console import configure
+
         configure()
         return
     if choice == "1":
         from sisifo.cli.commands.ai_console import converse
-        session = select_session() if typer.confirm("Incluir evidências de uma sessão?", default=False) else None
+
+        session = (
+            select_session()
+            if typer.confirm("Incluir evidências de uma sessão?", default=False)
+            else None
+        )
         converse(session)
         return
     cfg = load_config()
@@ -214,22 +256,34 @@ def _submenu_ia():
     max_batches = IntPrompt.ask("Máx. lotes", default=50)
 
     from sisifo.core.ai_analyzer import prepare_batches
+
     preview = prepare_batches(sess_id)
     console.print(f"Prévia local: {store.session_dir(sess_id) / 'analysis/ai-input.json'}")
     console.print(f"Mascaramentos: {preview['redaction']['count']} (heurístico; revise a prévia)")
-    console.print("Exportação local, sem API." if provider == "export" else "Evidências serão enviadas ao provedor. Revise antes de autorizar.")
+    console.print(
+        "Exportação local, sem API."
+        if provider == "export"
+        else "Evidências serão enviadas ao provedor. Revise antes de autorizar."
+    )
     if not typer.confirm("Continuar?"):
         return
-    action = Prompt.ask("[1] Analisar [2] Criar plano do agente [0] Voltar", choices=["0", "1", "2"], default="0")
+    action = Prompt.ask(
+        "[1] Analisar [2] Criar plano do agente [0] Voltar", choices=["0", "1", "2"], default="0"
+    )
     if action == "1":
         _run_and_show(analyze_session, sess_id, model or None, None, provider, max_batches)
     elif action == "2":
         from sisifo.core.agent import review_plan
+
         plan_id = review_plan(sess_id, provider, model or None)
-        console.print(f"Plano salvo. Revise: sisifo agent show {plan_id}; execute: sisifo agent run {plan_id}")
+        console.print(
+            f"Plano salvo. Revise: sisifo agent show {plan_id}; execute: sisifo agent run {plan_id}"
+        )
+
 
 def _submenu_osint():
     from sisifo.cli.commands.osint import terminal_cmd
+
     terminal_cmd()
 
 
@@ -237,9 +291,10 @@ def _submenu_web():
     ui.section("Interface web")
     if existing_web(8000):
         console.print("Sísifo web já está em execução em http://127.0.0.1:8000")
-        open_browser = Prompt.ask("Abrir no navegador?", choices=["s","n"], default="n")
+        open_browser = Prompt.ask("Abrir no navegador?", choices=["s", "n"], default="n")
         if open_browser == "s":
             import webbrowser
+
             webbrowser.open("http://127.0.0.1:8000")
         return
     port = IntPrompt.ask("Porta (0 = voltar)", default=0)
@@ -247,10 +302,12 @@ def _submenu_web():
         return
     try:
         from sisifo.cli.commands.web import start_web
+
         start_web(port=port, no_browser=False)
     except typer.Exit as e:
         if e.exit_code != 0:
             console.print(f"[red]Erro ao iniciar web (código {e.exit_code})[/red]")
+
 
 def _submenu_config():
     while True:
@@ -260,28 +317,33 @@ def _submenu_config():
         console.print("[3] Credenciais OSINT")
         console.print("[4] Diretórios efetivos")
         console.print("[0] Voltar")
-        opt = Prompt.ask("Opção", choices=["1","2","3","4","0"], default="0")
+        opt = Prompt.ask("Opção", choices=["1", "2", "3", "4", "0"], default="0")
         if opt == "0":
             return
         if opt == "1":
             from sisifo.cli.commands.setup import setup as setup_cmd
+
             _run_and_show(setup_cmd)
         elif opt == "2":
             from sisifo.cli.commands.setup_web import set_password as set_web_cmd
+
             _run_and_show(set_web_cmd)
         elif opt == "3":
             from sisifo.cli.commands.osint import config_cmd
+
             conn = Prompt.ask("ID do conector")
             _run_and_show(config_cmd, connector=conn, delete=False)
         elif opt == "4":
             console.print(f"Dados: {store.data_root()}")
             console.print(f"Config: {config_dir()}")
 
+
 def _submenu_diagnostico():
     ui.section("Diagnóstico")
     # Docker
     try:
         import docker
+
         client = docker.from_env(timeout=5)
         client.ping()
         ui.ok("Docker OK")
@@ -295,6 +357,7 @@ def _submenu_diagnostico():
         ui.error(f"Docker indisponível: {exc}", "Inicie o Docker Desktop e execute sisifo doctor.")
     # Porta web
     import socket
+
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind(("127.0.0.1", 8000))
@@ -302,9 +365,11 @@ def _submenu_diagnostico():
     except OSError:
         console.print("Porta 8000 ocupada")
 
+
 # ---------------------------------------------------------------------------
 # Main menu loop
 # ---------------------------------------------------------------------------
+
 
 def menu() -> None:
     """Entry point used by `sisifo menu` and by the no‑args callback."""
@@ -334,13 +399,15 @@ def menu() -> None:
         data_dir = str(store.data_root())
         mode = "Docker" if os.getenv("SISIFO_DATA_DIR") == "/data" else "Nativo"
 
-        ui.panel([
-            ("Versão", ver),
-            ("IA", f"{ai_status} ({cfg.get('model') or '-'})"),
-            ("Web", web_status),
-            ("Dados", data_dir),
-            ("Modo", mode),
-        ])
+        ui.panel(
+            [
+                ("Versão", ver),
+                ("IA", f"{ai_status} ({cfg.get('model') or '-'})"),
+                ("Web", web_status),
+                ("Dados", data_dir),
+                ("Modo", mode),
+            ]
+        )
         ui.menu([(key, title) for key, (title, _) in NAV.items()])
 
         try:
@@ -365,6 +432,7 @@ def menu() -> None:
         if choice == "6":
             break
         console.print()
+
 
 def _submenu_ajuda():
     ui.section("Ajuda e comandos")

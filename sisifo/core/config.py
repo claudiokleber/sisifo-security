@@ -224,5 +224,8 @@ def set_web_password(password: str) -> None:
     value = _password_bytes(password)
     cfg = load_service_config("web")
     cfg.pop("password", None)
-    cfg.update(password_hash=bcrypt.hashpw(value, bcrypt.gensalt()).decode(), password_scheme="bcrypt-sha256-v1")
+    cfg.update(
+        password_hash=bcrypt.hashpw(value, bcrypt.gensalt()).decode(),
+        password_scheme="bcrypt-sha256-v1",
+    )
     save_service_config("web", cfg)

@@ -19,7 +19,7 @@ requires-python = ">=3.11"
 dependencies = ["typer>=0.15,<1", "rich>=13,<16", "pydantic>=2.10,<3", "docker>=7.1,<8", "defusedxml>=0.7,<1", "httpx>=0.28,<1", "bcrypt>=4.0,<5"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8,<10", "pytest-asyncio>=1,<2", "ruff>=0.9,<1", "build>=1,<2"]
+dev = ["pytest>=8,<10", "pytest-asyncio>=1,<2", "ruff>=0.9,<1", "build>=1,<2", "playwright>=1.40,<2"]
 web = ["fastapi>=0.110,<1", "uvicorn[standard]>=0.29,<1", "python-multipart>=0.0,<1", "jinja2>=3.1,<4"]
 
 [project.scripts]
@@ -27,6 +27,8 @@ sisifo = "sisifo.cli.main:app"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-m 'not e2e'"
+markers = ["e2e: requires an installed Playwright Chromium browser; run explicitly with -m e2e"]
 
 [tool.ruff]
 line-length = 100

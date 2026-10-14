@@ -3,6 +3,24 @@ on: [push, pull_request]
 permissions:
   contents: read
 jobs:
+  browser-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e ".[dev,web]"
+      - run: python -m playwright install --with-deps chromium
+      - run: python -m pytest -m e2e tests/test_e2e_osint.py -q
+        env:
+          SISIFO_E2E_ARTIFACTS: artifacts/e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: osint-browser-failure
+          path: artifacts/e2e
+          retention-days: 7
   unit:
     strategy:
       matrix:

@@ -60,6 +60,7 @@ app.add_typer(network.app, name="network")
 def setup():
     """Assistente interativo de configuração (IA e senha web)."""
     from sisifo.cli.commands.ai_console import configure
+
     configure()
     if not web_password_configured() and sys.stdin.isatty():
         if typer.confirm("Deseja definir senha da interface web agora?"):
@@ -95,7 +96,9 @@ def doctor(
         if missing:
             raise typer.Exit(1)
     except docker.errors.DockerException:
-        console.print("Docker indisponível (opcional). Menu, configuração e web local continuam disponíveis.")
+        console.print(
+            "Docker indisponível (opcional). Menu, configuração e web local continuam disponíveis."
+        )
         console.print("Inicie o Docker somente para executar módulos que usam containers.")
     finally:
         if client:
@@ -103,9 +106,12 @@ def doctor(
 
 
 @app.command()
-def repair(rollback: bool = typer.Option(False, "--rollback", help="Ativar a versão anterior instalada")):
+def repair(
+    rollback: bool = typer.Option(False, "--rollback", help="Ativar a versão anterior instalada"),
+):
     """Repara launcher/PATH da instalação do usuário; não apaga dados."""
     from sisifo.installation import repair as repair_installation
+
     try:
         repair_installation(rollback)
     except (ValueError, OSError) as exc:
@@ -117,15 +123,21 @@ def repair(rollback: bool = typer.Option(False, "--rollback", help="Ativar a ver
 def ai_status_cmd():
     """Mostrar configuração de IA sem exibir credenciais."""
     from sisifo.core.ai_connection import public_status
+
     state = public_status()
-    console.print(f"IA: {'configurada' if state['configured'] else 'desconectada'}; modelo: {state['model'] or '-'}")
+    console.print(
+        f"IA: {'configurada' if state['configured'] else 'desconectada'}; modelo: {state['model'] or '-'}"
+    )
     console.print(f"API: {state['endpoint'] or '-'} (status local; sem consulta de conectividade)")
 
 
 @app.command(name="chat")
-def chat_cmd(session_id: str = typer.Option(None, "--session", help="Incluir prévia de uma sessão")):
+def chat_cmd(
+    session_id: str = typer.Option(None, "--session", help="Incluir prévia de uma sessão"),
+):
     """Conversar com a IA configurada sobre verificações e resultados."""
     from sisifo.cli.commands.ai_console import converse
+
     converse(session_id)
 
 
@@ -133,6 +145,7 @@ def chat_cmd(session_id: str = typer.Option(None, "--session", help="Incluir pr�
 def menu():
     """Menu interativo do Sísifo."""
     from sisifo.cli.commands.menu import menu as run_menu
+
     run_menu()
 
 
@@ -149,9 +162,6 @@ def main(ctx: typer.Context):
         else:
             console.print(ctx.get_help())
             raise typer.Exit()
-
-
-
 
 
 @app.command("help")
@@ -174,6 +184,7 @@ def help_cmd():
 No terminal OSINT: /ajuda, /voltar, /limpar, /sair.
 Resultados podem ser selecionados para análise pela IA, com prévia e confirmação separada.
 Consultas HIBP dependem da chave e do plano contratado; não há garantia de gratuidade.""")
+
 
 if __name__ == "__main__":
     app()

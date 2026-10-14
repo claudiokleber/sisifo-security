@@ -186,8 +186,13 @@ def scan(target, names="nmap", project="default", timeout=600, *, control=None):
             save_session(s)
             log_event(s.id, "module_started", tool=m.name)
             result, findings = execute(
-                m, target_for(m, target), s.id, timeout, run=run, persist=lambda: save_session(s),
-                **({"control": control} if control else {})
+                m,
+                target_for(m, target),
+                s.id,
+                timeout,
+                run=run,
+                persist=lambda: save_session(s),
+                **({"control": control} if control else {}),
             )
             s.runs[-1] = result
             all_findings.extend(findings)

@@ -5,7 +5,9 @@ from sisifo.core.modules import registry
 
 console = Console(markup=False)
 
-app = typer.Typer(help="Listar módulos disponíveis.", no_args_is_help=False, invoke_without_command=True)
+app = typer.Typer(
+    help="Listar módulos disponíveis.", no_args_is_help=False, invoke_without_command=True
+)
 
 
 @app.callback(invoke_without_command=True)

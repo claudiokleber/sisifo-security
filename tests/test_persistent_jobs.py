@@ -13,7 +13,7 @@ def wait_job(manager, job_id):
         result = manager.get(job_id)
         if result["status"] not in {"pending", "running", "cancelling"}:
             return result
-        time.sleep(.01)
+        time.sleep(0.01)
     raise AssertionError("Job did not finish")
 
 
@@ -21,7 +21,9 @@ def test_persistence_and_idempotency(tmp_path):
     manager = JobManager(tmp_path, workers=1)
     gate = threading.Event()
     try:
-        first = manager.submit("test", {"x": 1}, lambda c: gate.wait(2) and {"ok": True}, key="same")
+        first = manager.submit(
+            "test", {"x": 1}, lambda c: gate.wait(2) and {"ok": True}, key="same"
+        )
         assert manager.submit("test", {"x": 1}, lambda c: {}, key="same") == first
         with pytest.raises(ValueError, match="diferentes"):
             manager.submit("test", {"x": 2}, lambda c: {}, key="same")
@@ -41,7 +43,9 @@ def test_recovery_does_not_execute(tmp_path):
     root = tmp_path / "jobs"
     root.mkdir()
     job_id = "a" * 32
-    (root / f"{job_id}.json").write_text(json.dumps({"id": job_id, "status": "running", "created_at": 1}))
+    (root / f"{job_id}.json").write_text(
+        json.dumps({"id": job_id, "status": "running", "created_at": 1})
+    )
     manager = JobManager(tmp_path)
     try:
         assert manager.get(job_id)["status"] == "interrupted"
@@ -61,12 +65,14 @@ def test_single_owner(tmp_path):
 def test_cooperative_cancellation_and_partial_progress(tmp_path):
     manager = JobManager(tmp_path)
     started = threading.Event()
+
     def task(control):
         control.progress("step 1", {"partial": True})
         started.set()
         while True:
             control.check()
-            control.cancelled.wait(.01)
+            control.cancelled.wait(0.01)
+
     try:
         job_id = manager.submit("test", {}, task)
         assert started.wait(2)

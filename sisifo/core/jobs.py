@@ -34,7 +34,9 @@ class JobManager:
                 if job["id"] != path.stem:
                     continue
                 if job["status"] in ACTIVE:
-                    job.update(status="interrupted", error="Executor reiniciado; ação não repetida.")
+                    job.update(
+                        status="interrupted", error="Executor reiniciado; ação não repetida."
+                    )
                     self._save(job)
                 self._jobs[job["id"]] = job
             except (ValueError, KeyError, OSError):
@@ -46,8 +48,12 @@ class JobManager:
 
     def list(self):
         with self._lock:
-            return [self.get(j["id"]) for j in sorted(
-                self._jobs.values(), key=lambda j: j["created_at"], reverse=True)[:100]]
+            return [
+                self.get(j["id"])
+                for j in sorted(self._jobs.values(), key=lambda j: j["created_at"], reverse=True)[
+                    :100
+                ]
+            ]
 
     def get(self, job_id):
         with self._lock:
@@ -72,8 +78,17 @@ class JobManager:
             if sum(j["status"] in ACTIVE for j in self._jobs.values()) >= self.max_pending:
                 raise ValueError("Fila cheia; aguarde a conclusão dos jobs.")
             job_id = uuid4().hex
-            job = dict(id=job_id, type=kind, status="pending", progress="Na fila",
-                       result=None, error=None, created_at=time.time(), digest=digest, key=key_hash)
+            job = dict(
+                id=job_id,
+                type=kind,
+                status="pending",
+                progress="Na fila",
+                result=None,
+                error=None,
+                created_at=time.time(),
+                digest=digest,
+                key=key_hash,
+            )
             self._jobs[job_id] = job
             self._save(job)
 
@@ -99,15 +114,25 @@ class JobManager:
             with self._lock:
                 control.check()
                 job["result"] = redact(result)[0]
-                state = result.get("status", "completed") if isinstance(result, dict) else "completed"
-                job["status"] = state if state in {"partial", "failed", "cancelled", "interrupted"} else "completed"
+                state = (
+                    result.get("status", "completed") if isinstance(result, dict) else "completed"
+                )
+                job["status"] = (
+                    state
+                    if state in {"partial", "failed", "cancelled", "interrupted"}
+                    else "completed"
+                )
         except (Cancelled, KeyboardInterrupt):
             job.update(status="cancelled", error="Cancelado; resultados parciais preservados.")
         except BudgetExceeded:
-            job.update(status="partial" if job["result"] else "failed", error="Limite de tempo atingido.")
+            job.update(
+                status="partial" if job["result"] else "failed", error="Limite de tempo atingido."
+            )
         except Exception:
-            job.update(status="partial" if job["result"] else "failed",
-                       error="A operação falhou. Consulte o resultado parcial e o diagnóstico local.")
+            job.update(
+                status="partial" if job["result"] else "failed",
+                error="A operação falhou. Consulte o resultado parcial e o diagnóstico local.",
+            )
         finally:
             with self._lock:
                 self._save(job)
